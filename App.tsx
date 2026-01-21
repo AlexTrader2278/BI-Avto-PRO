@@ -16,8 +16,7 @@ import {
 } from 'recharts';
 
 // --- ИНИЦИАЛИЗАЦИЯ ---
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
+const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_GENAI_API_KEY });
 // --- ТИПЫ ДАННЫХ ---
 export interface AttachedFile {
   name: string;
