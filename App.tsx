@@ -19,7 +19,7 @@ try {
   if (typeof mermaid !== 'undefined' && mermaid.initialize) {
     mermaid.initialize({
       startOnLoad: false,
-      theme: 'dark',
+      theme: 'light',
       securityLevel: 'loose',
       fontFamily: 'Inter',
     });
