@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, Activity, TrendingUp, FileText, Zap, AlertTriangle, Loader2, Database,
@@ -19,7 +18,7 @@ try {
   if (typeof mermaid !== 'undefined' && mermaid.initialize) {
     mermaid.initialize({
       startOnLoad: false,
-      theme: 'light',
+      theme: 'neutral', // Светлая тема для диаграмм
       securityLevel: 'loose',
       fontFamily: 'Inter',
     });
@@ -45,10 +44,10 @@ const MermaidViewer: React.FC<{ chart: string; id: string }> = ({ chart, id }) =
             if (ref.current) ref.current.innerHTML = res.svg;
           }).catch(err => {
             console.error("Mermaid render error:", err);
-            if (ref.current) ref.current.innerHTML = `<p class="text-[10px] text-slate-700">Ошибка отрисовки графика</p>`;
+            if (ref.current) ref.current.innerHTML = `<p class="text-[10px] text-slate-400">Ошибка отрисовки графика</p>`;
           });
         } else {
-          if (ref.current) ref.current.innerHTML = `<p class="text-[10px] text-slate-700 italic">Визуализация недоступна</p>`;
+          if (ref.current) ref.current.innerHTML = `<p class="text-[10px] text-slate-400 italic">Визуализация недоступна</p>`;
         }
       } catch (e) {
         console.error("Mermaid block failed:", e);
@@ -57,7 +56,7 @@ const MermaidViewer: React.FC<{ chart: string; id: string }> = ({ chart, id }) =
   }, [chart, id]);
 
   return (
-    <div className="bg-white/[0.02] border border-white/5 rounded-[24px] p-4 flex items-center justify-center min-h-[250px] w-full overflow-hidden report-card">
+    <div className="bg-white border border-slate-200 rounded-[24px] p-4 flex items-center justify-center min-h-[250px] w-full overflow-hidden shadow-sm report-card">
       <div ref={ref} className="w-full flex justify-center scale-90" />
     </div>
   );
@@ -99,7 +98,6 @@ const App: React.FC = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages, isChatLoading]);
 
-  // Заполнение данных по VIN (WMI/VDS декодер + поиск)
   const handleVinLookup = async (forcedVin?: string) => {
     const vinToSearch = forcedVin || carData.vin;
     if (vinToSearch.length < 5) return;
@@ -122,7 +120,6 @@ const App: React.FC = () => {
     }
   };
 
-  // OCR распознавание VIN из изображения
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
@@ -142,7 +139,6 @@ const App: React.FC = () => {
           attachedFiles: [...prev.attachedFiles, newFile]
         }));
 
-        // Если это изображение, пробуем найти на нем VIN
         if (file.type.startsWith('image/')) {
           setScanLoading(true);
           try {
@@ -422,37 +418,37 @@ const App: React.FC = () => {
 
   if (appError) {
     return (
-      <div className="h-screen bg-[#050505] flex items-center justify-center p-10 text-center text-slate-200">
+      <div className="h-screen bg-slate-50 flex items-center justify-center p-10 text-center text-slate-900">
         <div className="max-w-md space-y-6">
           <AlertTriangle size={64} className="mx-auto text-red-500" />
           <h1 className="text-2xl font-bold">Ошибка системы</h1>
-          <p className="text-slate-400">{appError}</p>
-          <button onClick={() => setAppError(null)} className="px-6 py-3 bg-blue-600 rounded-xl font-bold hover:bg-blue-500 transition-colors">Попробовать снова</button>
+          <p className="text-slate-600">{appError}</p>
+          <button onClick={() => setAppError(null)} className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors">Попробовать снова</button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen bg-[#050505] text-slate-200 overflow-hidden font-sans">
-      <aside className={`no-print w-80 border-r border-white/5 bg-[#0c0c0c] flex flex-col transition-all z-50 fixed md:relative inset-y-0 ${showSidebar ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
-        <div className="p-8 border-b border-white/5 flex items-center justify-between">
+    <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans">
+      <aside className={`no-print w-80 border-r border-slate-200 bg-white flex flex-col transition-all z-50 fixed md:relative inset-y-0 ${showSidebar ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+        <div className="p-8 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Zap className="text-blue-500 fill-blue-500" size={24} />
-            <span className="font-black text-xl tracking-tighter uppercase">BI-AVTO</span>
+            <Zap className="text-blue-600 fill-blue-600" size={24} />
+            <span className="font-black text-xl tracking-tighter uppercase text-slate-900">BI-AVTO</span>
           </div>
           <button onClick={() => setShowSidebar(false)} className="md:hidden text-slate-400"><X size={24} /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          <h3 className="text-[10px] font-bold text-slate-600 uppercase tracking-widest px-2">Архив</h3>
-          {history.length === 0 && <p className="text-xs text-slate-600 px-2 italic">История пуста</p>}
+          <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2">Архив</h3>
+          {history.length === 0 && <p className="text-xs text-slate-400 px-2 italic">История пуста</p>}
           {history.map(h => (
             <div key={h.id} onClick={() => {
               const data = localStorage.getItem(`${STORAGE_KEYS.ANALYSIS_PREFIX}${h.id}`);
               if (data) setAnalysis(JSON.parse(data));
               setShowSidebar(false);
-            }} className="p-3 rounded-xl hover:bg-white/5 cursor-pointer border border-transparent hover:border-white/5 transition-all">
-              <div className="text-sm font-bold truncate">{h.model}</div>
+            }} className="p-3 rounded-xl hover:bg-slate-50 cursor-pointer border border-transparent hover:border-slate-100 transition-all">
+              <div className="text-sm font-bold truncate text-slate-900">{h.model}</div>
               <div className="text-[10px] text-slate-500">{h.date}</div>
             </div>
           ))}
@@ -460,12 +456,12 @@ const App: React.FC = () => {
       </aside>
 
       <main className="flex-1 flex flex-col relative overflow-hidden">
-        <header className="h-20 border-b border-white/10 bg-[#080808]/80 backdrop-blur-xl px-6 flex items-center justify-between z-40 no-print">
+        <header className="h-20 border-b border-slate-200 bg-white/80 backdrop-blur-xl px-6 flex items-center justify-between z-40 no-print">
           <div className="flex items-center gap-4">
-            <button onClick={() => setShowSidebar(!showSidebar)} className="md:hidden text-slate-200"><Menu size={24} /></button>
-            <div className="flex items-center gap-4 bg-white/5 px-4 py-2 rounded-xl border border-white/5">
-              <Activity size={18} className="text-blue-500" />
-              <span className="text-sm font-bold truncate max-w-[150px]">{carData.make ? `${carData.make} ${carData.model}` : 'Новая диагностика'}</span>
+            <button onClick={() => setShowSidebar(!showSidebar)} className="md:hidden text-slate-900"><Menu size={24} /></button>
+            <div className="flex items-center gap-4 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200">
+              <Activity size={18} className="text-blue-600" />
+              <span className="text-sm font-bold truncate max-w-[150px] text-slate-700">{carData.make ? `${carData.make} ${carData.model}` : 'Новая диагностика'}</span>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -474,7 +470,7 @@ const App: React.FC = () => {
                 <button 
                   onClick={handleShare} 
                   title="Копировать ссылку"
-                  className={`p-2 rounded-lg transition-all duration-300 flex items-center gap-2 ${shareSuccess ? 'bg-emerald-600/20 text-emerald-400' : 'bg-white/5 text-slate-400 hover:text-white'}`}
+                  className={`p-2 rounded-lg transition-all duration-300 flex items-center gap-2 ${shareSuccess ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500 hover:text-slate-900'}`}
                 >
                   {shareSuccess ? <ClipboardCheck size={20} /> : <Share2 size={20} />}
                 </button>
@@ -482,7 +478,7 @@ const App: React.FC = () => {
                   onClick={handleExportHtml} 
                   disabled={isExportingHtml}
                   title="Экспорт в интерактивный HTML"
-                  className="p-2 bg-emerald-600/20 text-emerald-400 rounded-lg hover:bg-emerald-600 hover:text-white transition-all disabled:opacity-50 flex items-center gap-2"
+                  className="p-2 bg-emerald-100 text-emerald-600 rounded-lg hover:bg-emerald-600 hover:text-white transition-all disabled:opacity-50 flex items-center gap-2"
                 >
                    {isExportingHtml ? <Loader2 className="animate-spin" size={20} /> : <FileCode size={20} />}
                    <span className="text-xs font-bold hidden sm:inline uppercase tracking-tighter">HTML Отчет</span>
@@ -491,7 +487,7 @@ const App: React.FC = () => {
                   onClick={handleDownloadPdf} 
                   disabled={isExporting}
                   title="Скачать PDF"
-                  className="p-2 bg-blue-600/20 text-blue-400 rounded-lg hover:bg-blue-600 hover:text-white transition-all disabled:opacity-50 flex items-center gap-2"
+                  className="p-2 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all disabled:opacity-50 flex items-center gap-2"
                 >
                   {isExporting ? <Loader2 className="animate-spin" size={20} /> : <FileDown size={20} />}
                   <span className="text-xs font-bold hidden sm:inline uppercase tracking-tighter">PDF Отчет</span>
@@ -499,13 +495,13 @@ const App: React.FC = () => {
                 <button 
                   onClick={() => window.print()} 
                   title="Печать"
-                  className="p-2 bg-white/5 rounded-lg text-slate-400 hover:text-white transition-colors"
+                  className="p-2 bg-slate-100 rounded-lg text-slate-500 hover:text-slate-900 transition-colors"
                 >
                   <Printer size={20} />
                 </button>
               </>
             )}
-            <button onClick={() => setShowChat(!showChat)} className={`p-2 rounded-lg transition-colors ${showChat ? 'bg-blue-600 text-white' : 'bg-white/5 text-slate-400 hover:text-white'}`}>
+            <button onClick={() => setShowChat(!showChat)} className={`p-2 rounded-lg transition-colors ${showChat ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-900'}`}>
               <MessageSquare size={20} />
             </button>
           </div>
@@ -514,15 +510,15 @@ const App: React.FC = () => {
         <div className="flex-1 overflow-y-auto p-6 md:p-12 no-print">
           <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-10">
             <div className="lg:col-span-4 space-y-6 no-print">
-              <div className="bg-[#0c0c0c] border border-white/5 p-8 rounded-[32px] space-y-8 shadow-2xl">
+              <div className="bg-white border border-slate-200 p-8 rounded-[32px] space-y-8 shadow-xl">
                 <div>
                   <div className="flex justify-between items-center mb-2">
                     <label className="text-[9px] font-bold text-slate-500 uppercase">VIN-КОД</label>
-                    {scanLoading && <div className="flex items-center gap-2 text-[9px] text-blue-500 font-bold uppercase animate-pulse"><Loader2 size={10} className="animate-spin" /> Сканирую фото...</div>}
+                    {scanLoading && <div className="flex items-center gap-2 text-[9px] text-blue-600 font-bold uppercase animate-pulse"><Loader2 size={10} className="animate-spin" /> Сканирую фото...</div>}
                   </div>
                   <div className="flex gap-2">
-                    <input className="flex-1 bg-black border border-white/10 rounded-xl px-4 py-2 text-sm uppercase text-slate-100 font-mono tracking-widest focus:border-blue-500 outline-none transition-colors" value={carData.vin} onChange={e => setCarData({...carData, vin: e.target.value.toUpperCase()})} placeholder="WBA..." />
-                    <button onClick={() => handleVinLookup()} disabled={vinLoading} className="p-2 bg-blue-600 rounded-lg disabled:opacity-50 hover:bg-blue-500 transition-colors">
+                    <input className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm uppercase text-slate-900 font-mono tracking-widest focus:border-blue-500 focus:bg-white outline-none transition-all" value={carData.vin} onChange={e => setCarData({...carData, vin: e.target.value.toUpperCase()})} placeholder="WBA..." />
+                    <button onClick={() => handleVinLookup()} disabled={vinLoading} className="p-2 bg-blue-600 text-white rounded-lg disabled:opacity-50 hover:bg-blue-700 transition-colors">
                       {vinLoading ? <Loader2 className="animate-spin" size={18} /> : <Search size={18} />}
                     </button>
                   </div>
@@ -531,47 +527,47 @@ const App: React.FC = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-[9px] font-bold text-slate-500 uppercase">Марка</label>
-                    <input className="w-full bg-black border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-200 focus:border-blue-500 outline-none transition-colors" placeholder="Toyota" value={carData.make} onChange={e => setCarData({...carData, make: e.target.value})} />
+                    <input className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:bg-white outline-none transition-all" placeholder="Toyota" value={carData.make} onChange={e => setCarData({...carData, make: e.target.value})} />
                   </div>
                   <div className="space-y-1">
                     <label className="text-[9px] font-bold text-slate-500 uppercase">Модель</label>
-                    <input className="w-full bg-black border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-200 focus:border-blue-500 outline-none transition-colors" placeholder="Camry" value={carData.model} onChange={e => setCarData({...carData, model: e.target.value})} />
+                    <input className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:bg-white outline-none transition-all" placeholder="Camry" value={carData.model} onChange={e => setCarData({...carData, model: e.target.value})} />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-[9px] font-bold text-slate-500 uppercase">Год</label>
-                    <input type="number" className="w-full bg-black border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-200 focus:border-blue-500 outline-none transition-colors" placeholder="2020" value={carData.year || ''} onChange={e => setCarData({...carData, year: parseInt(e.target.value) || undefined})} />
+                    <input type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:bg-white outline-none transition-all" placeholder="2020" value={carData.year || ''} onChange={e => setCarData({...carData, year: parseInt(e.target.value) || undefined})} />
                   </div>
                   <div className="space-y-1">
                     <label className="text-[9px] font-bold text-slate-500 uppercase">Пробег</label>
-                    <input type="number" className="w-full bg-black border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-200 focus:border-blue-500 outline-none transition-colors" placeholder="85000" value={carData.mileage || ''} onChange={e => setCarData({...carData, mileage: parseInt(e.target.value) || 0})} />
+                    <input type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:bg-white outline-none transition-all" placeholder="85000" value={carData.mileage || ''} onChange={e => setCarData({...carData, mileage: parseInt(e.target.value) || 0})} />
                   </div>
                 </div>
 
                 <div className="space-y-1">
                   <label className="text-[9px] font-bold text-slate-500 uppercase">Жалоба</label>
-                  <textarea rows={4} className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-200 resize-none focus:border-blue-500 outline-none transition-colors" value={carData.complaint} onChange={e => setCarData({...carData, complaint: e.target.value})} placeholder="Опишите проблему..." />
+                  <textarea rows={4} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 resize-none focus:border-blue-500 focus:bg-white outline-none transition-all" value={carData.complaint} onChange={e => setCarData({...carData, complaint: e.target.value})} placeholder="Опишите проблему..." />
                 </div>
 
                 <div className="space-y-4">
-                  <label className="flex flex-col items-center justify-center w-full p-4 border-2 border-dashed border-white/10 rounded-2xl cursor-pointer hover:border-blue-500 transition-all bg-white/[0.01]">
+                  <label className="flex flex-col items-center justify-center w-full p-4 border-2 border-dashed border-slate-200 rounded-2xl cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all bg-slate-50">
                     <div className="flex gap-2 mb-2">
-                       <UploadCloud size={24} className="text-slate-500" />
-                       <Camera size={24} className="text-blue-500" />
+                       <UploadCloud size={24} className="text-slate-400" />
+                       <Camera size={24} className="text-blue-600" />
                     </div>
-                    <span className="text-[10px] uppercase font-bold text-slate-500">Загрузите СТС или фото VIN</span>
+                    <span className="text-[10px] uppercase font-bold text-slate-500 text-center">Загрузите СТС или фото VIN</span>
                     <input type="file" multiple className="hidden" onChange={handleFileUpload} accept="image/*,.pdf,.txt" />
                   </label>
                   <div className="flex flex-wrap gap-2">
                     {carData.attachedFiles.map((f, i) => (
-                      <div key={i} className="px-2 py-1 bg-white/5 rounded text-[10px] truncate max-w-[100px] border border-white/10">{f.name}</div>
+                      <div key={i} className="px-2 py-1 bg-slate-100 rounded text-[10px] truncate max-w-[100px] border border-slate-200 text-slate-600">{f.name}</div>
                     ))}
                   </div>
                 </div>
 
-                <button onClick={handleRunAnalysis} disabled={loading} className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-3 disabled:bg-slate-800 shadow-xl shadow-blue-600/20">
+                <button onClick={handleRunAnalysis} disabled={loading} className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-3 disabled:bg-slate-200 disabled:text-slate-400 shadow-lg shadow-blue-600/20">
                   {loading ? <Loader2 className="animate-spin" size={18} /> : <Zap size={18} />}
                   {loading ? 'Анализ...' : 'Запустить анализ'}
                 </button>
@@ -582,9 +578,9 @@ const App: React.FC = () => {
               {loading ? (
                 <SkeletonLoader />
               ) : !analysis ? (
-                <div className="h-[600px] border-2 border-dashed border-white/5 rounded-[40px] flex flex-col items-center justify-center bg-white/[0.01] no-print">
-                  <Database size={48} className="text-slate-800 mb-6" />
-                  <p className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">Ожидание данных для аналитики</p>
+                <div className="h-[600px] border-2 border-dashed border-slate-200 rounded-[40px] flex flex-col items-center justify-center bg-white no-print">
+                  <Database size={48} className="text-slate-200 mb-6" />
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Ожидание данных для аналитики</p>
                 </div>
               ) : (
                 <div ref={reportRef} className="space-y-12 animate-in fade-in slide-in-from-bottom-10 duration-700 p-4 md:p-0">
@@ -595,34 +591,34 @@ const App: React.FC = () => {
                            <Zap className="text-white" size={32} />
                          </div>
                          <div>
-                            <h1 className="text-3xl font-black tracking-tighter uppercase">BI-AVTO PRO</h1>
+                            <h1 className="text-3xl font-black tracking-tighter uppercase text-slate-900">BI-AVTO PRO</h1>
                             <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Интеллектуальный диагностический отчет</p>
                          </div>
                       </div>
                       <div className="text-right">
                         <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">ID Отчета</div>
-                        <div className="text-sm font-mono font-bold">{analysis.id}</div>
+                        <div className="text-sm font-mono font-bold text-slate-900">{analysis.id}</div>
                         <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-3 mb-1">Дата формирования</div>
-                        <div className="text-sm font-bold">{new Date().toLocaleDateString('ru-RU')}</div>
+                        <div className="text-sm font-bold text-slate-900">{new Date().toLocaleDateString('ru-RU')}</div>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-4 gap-6 mt-12 bg-slate-50 border border-slate-200 p-6 rounded-[24px]">
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-slate-400"><Car size={14}/><span className="text-[9px] font-black uppercase">Автомобиль</span></div>
-                        <div className="font-bold text-sm">{carData.make} {carData.model}</div>
+                        <div className="flex items-center gap-2 text-slate-400"><Car size={14}/><span className="text-[9px] font-black uppercase tracking-tighter">Автомобиль</span></div>
+                        <div className="font-bold text-sm text-slate-900">{carData.make} {carData.model}</div>
                       </div>
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-slate-400"><Calendar size={14}/><span className="text-[9px] font-black uppercase">Год выпуска</span></div>
-                        <div className="font-bold text-sm">{carData.year || 'н/д'}</div>
+                        <div className="flex items-center gap-2 text-slate-400"><Calendar size={14}/><span className="text-[9px] font-black uppercase tracking-tighter">Год выпуска</span></div>
+                        <div className="font-bold text-sm text-slate-900">{carData.year || 'н/д'}</div>
                       </div>
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-slate-400"><Gauge size={14}/><span className="text-[9px] font-black uppercase">Пробег</span></div>
-                        <div className="font-bold text-sm">{carData.mileage.toLocaleString()} км</div>
+                        <div className="flex items-center gap-2 text-slate-400"><Gauge size={14}/><span className="text-[9px] font-black uppercase tracking-tighter">Пробег</span></div>
+                        <div className="font-bold text-sm text-slate-900">{carData.mileage.toLocaleString()} км</div>
                       </div>
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-slate-400"><Fingerprint size={14}/><span className="text-[9px] font-black uppercase">VIN-Код</span></div>
-                        <div className="font-bold text-sm font-mono">{carData.vin || 'НЕТ ДАННЫХ'}</div>
+                        <div className="flex items-center gap-2 text-slate-400"><Fingerprint size={14}/><span className="text-[9px] font-black uppercase tracking-tighter">VIN-Код</span></div>
+                        <div className="font-bold text-sm font-mono text-slate-900">{carData.vin || 'НЕТ ДАННЫХ'}</div>
                       </div>
                     </div>
                   </div>
@@ -641,14 +637,14 @@ const App: React.FC = () => {
                   </div>
 
                   {analysis.sources && analysis.sources.length > 0 && (
-                    <div className="bg-[#0c0c0c] border border-white/5 p-8 rounded-[32px] shadow-2xl report-section report-card no-print">
+                    <div className="bg-white border border-slate-200 p-8 rounded-[32px] shadow-sm report-section report-card no-print">
                       <div className="flex items-center gap-4 mb-8">
-                        <Search size={24} className="text-blue-500" />
-                        <h2 className="text-md font-black uppercase tracking-widest text-white">Источники (RU)</h2>
+                        <Search size={24} className="text-blue-600" />
+                        <h2 className="text-md font-black uppercase tracking-widest text-slate-900">Источники (RU)</h2>
                       </div>
                       <div className="flex flex-wrap gap-3">
                         {analysis.sources.map((s, i) => (
-                          <a key={i} href={s.uri} target="_blank" rel="noopener noreferrer" className="text-[11px] bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-xl text-blue-400 transition-all font-medium flex items-center gap-2 truncate max-w-[250px]">
+                          <a key={i} href={s.uri} target="_blank" rel="noopener noreferrer" className="text-[11px] bg-slate-50 hover:bg-slate-100 border border-slate-200 px-4 py-2 rounded-xl text-blue-600 transition-all font-medium flex items-center gap-2 truncate max-w-[250px]">
                             <ExternalLink size={12} /> {s.title}
                           </a>
                         ))}
@@ -656,29 +652,29 @@ const App: React.FC = () => {
                     </div>
                   )}
 
-                  <div className="bg-[#0c0c0c] border border-white/5 p-10 rounded-[40px] shadow-2xl report-section report-card">
-                    <div className="flex items-center gap-4 text-blue-500 mb-8">
+                  <div className="bg-white border border-slate-200 p-10 rounded-[40px] shadow-sm report-section report-card">
+                    <div className="flex items-center gap-4 text-blue-600 mb-8">
                       <FileText size={24} />
-                      <h2 className="text-lg font-black uppercase tracking-widest text-white">Вердикт системы</h2>
+                      <h2 className="text-lg font-black uppercase tracking-widest text-slate-900">Вердикт системы</h2>
                     </div>
-                    <div className="text-slate-300 text-[15px] leading-relaxed whitespace-pre-line font-medium text-justify">
+                    <div className="text-slate-700 text-[15px] leading-relaxed whitespace-pre-line font-medium text-justify">
                       {analysis.detailedIssues}
                     </div>
                   </div>
 
-                  <div className="bg-[#0c0c0c] border border-white/5 p-8 rounded-[32px] shadow-2xl report-section report-card">
+                  <div className="bg-white border border-slate-200 p-8 rounded-[32px] shadow-sm report-section report-card">
                     <div className="flex items-center gap-4 mb-8">
-                      <TrendingUp className="text-emerald-500" size={24} />
-                      <h2 className="text-md font-black uppercase tracking-widest text-white">Рекомендации</h2>
+                      <TrendingUp className="text-emerald-600" size={24} />
+                      <h2 className="text-md font-black uppercase tracking-widest text-slate-900">Рекомендации</h2>
                     </div>
                     <div className="space-y-4">
                       {analysis.upsells.map((u, i) => (
-                        <div key={i} className={`p-6 rounded-2xl border ${u.critical ? 'bg-red-500/5 border-red-500/20' : 'bg-black/40 border-white/5'}`}>
+                        <div key={i} className={`p-6 rounded-2xl border ${u.critical ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100'}`}>
                           <div className="flex justify-between items-start">
-                            <span className="text-sm font-bold text-slate-200">{u.name}</span>
-                            {u.critical && <span className="text-[9px] font-black text-red-500 border border-red-500/30 px-2 py-1 rounded-md uppercase tracking-tighter bg-red-500/10">Критично</span>}
+                            <span className="text-sm font-bold text-slate-900">{u.name}</span>
+                            {u.critical && <span className="text-[9px] font-black text-red-600 border border-red-200 px-2 py-1 rounded-md uppercase tracking-tighter bg-red-50">Критично</span>}
                           </div>
-                          <p className="text-[12px] text-slate-500 mt-3 leading-relaxed">{u.reason}</p>
+                          <p className="text-[12px] text-slate-600 mt-3 leading-relaxed">{u.reason}</p>
                         </div>
                       ))}
                     </div>
@@ -696,24 +692,24 @@ const App: React.FC = () => {
         </div>
 
         {showChat && (
-          <div className="fixed inset-y-0 right-0 w-full md:w-[600px] bg-[#080808] border-l border-white/10 shadow-2xl z-[100] flex flex-col animate-in slide-in-from-right duration-500 no-print">
-            <div className="p-8 border-b border-white/10 flex items-center justify-between">
+          <div className="fixed inset-y-0 right-0 w-full md:w-[600px] bg-white border-l border-slate-200 shadow-2xl z-[100] flex flex-col animate-in slide-in-from-right duration-500 no-print">
+            <div className="p-8 border-b border-slate-100 flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <Bot size={24} className="text-blue-500" />
-                <span className="font-black uppercase text-[11px] tracking-widest">AI Мастер</span>
+                <Bot size={24} className="text-blue-600" />
+                <span className="font-black uppercase text-[11px] tracking-widest text-slate-900">AI Мастер</span>
               </div>
-              <button onClick={() => setShowChat(false)} className="text-slate-400 hover:text-white transition-colors"><X size={24} /></button>
+              <button onClick={() => setShowChat(false)} className="text-slate-400 hover:text-slate-900 transition-colors"><X size={24} /></button>
             </div>
-            <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar bg-slate-50/50">
               {chatMessages.map((m, i) => (
                 <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
-                  <div className={`max-w-[85%] p-4 rounded-2xl text-[13px] ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-white/5 text-slate-300 border border-white/10'}`}>
+                  <div className={`max-w-[85%] p-4 rounded-2xl text-[13px] ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-white text-slate-700 border border-slate-200 shadow-sm'}`}>
                     {m.text}
                   </div>
                   {m.sources && m.sources.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-2 max-w-[85%]">
                       {m.sources.map((s, si) => (
-                        <a key={si} href={s.uri} target="_blank" rel="noopener noreferrer" className="text-[9px] text-blue-400 hover:underline bg-white/5 px-2 py-1 rounded border border-white/5 transition-colors">
+                        <a key={si} href={s.uri} target="_blank" rel="noopener noreferrer" className="text-[9px] text-blue-600 hover:underline bg-white px-2 py-1 rounded border border-slate-100 transition-colors shadow-sm">
                           {s.title}
                         </a>
                       ))}
@@ -723,16 +719,16 @@ const App: React.FC = () => {
               ))}
               {isChatLoading && (
                 <div className="flex justify-start">
-                  <div className="bg-white/5 border border-white/10 p-4 rounded-2xl animate-pulse">
-                    <Loader2 className="animate-spin text-blue-500" size={20} />
+                  <div className="bg-white border border-slate-200 p-4 rounded-2xl animate-pulse shadow-sm">
+                    <Loader2 className="animate-spin text-blue-600" size={20} />
                   </div>
                 </div>
               )}
               <div ref={chatEndRef} />
             </div>
-            <div className="p-8 border-t border-white/10 flex gap-4">
-              <input className="flex-1 bg-black border border-white/10 rounded-2xl px-6 py-4 text-sm text-slate-200 outline-none focus:border-blue-500 transition-all" placeholder="Спросить ассистента..." value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendMessage()} />
-              <button onClick={handleSendMessage} disabled={!chatInput.trim() || isChatLoading} className="p-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl transition-all disabled:opacity-50">
+            <div className="p-8 border-t border-slate-200 flex gap-4 bg-white">
+              <input className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 text-sm text-slate-900 outline-none focus:border-blue-500 focus:bg-white transition-all" placeholder="Спросить ассистента..." value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendMessage()} />
+              <button onClick={handleSendMessage} disabled={!chatInput.trim() || isChatLoading} className="p-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl transition-all disabled:opacity-50 shadow-lg shadow-blue-600/10">
                 <Send size={20} />
               </button>
             </div>
