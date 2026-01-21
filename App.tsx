@@ -1,524 +1,246 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, Activity, TrendingUp, FileText, Zap, AlertTriangle, Loader2, Database,
-  MessageSquare, Send, Bot, X, Menu, CheckCircle2, FileDown, Download, UploadCloud,
+  MessageSquare, Send, Bot, X, Menu, CheckCircle2, FileDown, UploadCloud,
   Share2, ClipboardCheck, Printer, Calendar, Gauge, Fingerprint, Car, FileCode, ExternalLink,
-  Camera
+  Paperclip, Trash2
 } from 'lucide-react';
-import { CarData, AnalysisResult, ChatMessage, InspectionHistory } from './types';
-import { analyzeCar, startDiagnosticChat, lookupVin, extractSources, extractVinFromImage } from './services/gemini';
-import SkeletonLoader from './components/SkeletonLoader';
-import PredictiveAnalysisModule from './components/PredictiveAnalysisModule';
-import InteractiveDashboard from './components/InteractiveDashboard';
+import { GoogleGenAI, Type, Chat } from "@google/genai";
 import mermaid from 'mermaid';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
+import { 
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
+  PieChart, Pie, Cell, BarChart, Bar, Brush
+} from 'recharts';
 
-try {
-  if (typeof mermaid !== 'undefined' && mermaid.initialize) {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: 'neutral', // Светлая тема для диаграмм
-      securityLevel: 'loose',
-      fontFamily: 'Inter',
-    });
-  }
-} catch (e) {
-  console.error("Mermaid init failed:", e);
+// --- ИНИЦИАЛИЗАЦИЯ ---
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+// --- ТИПЫ ДАННЫХ ---
+export interface AttachedFile {
+  name: string;
+  type: string;
+  data: string;
 }
 
-const STORAGE_KEYS = {
-  HISTORY: 'BI_AVTO_HISTORY_V5',
-  ANALYSIS_PREFIX: 'BI_AVTO_DATA_',
+export interface CarData {
+  make: string;
+  model: string;
+  year?: number;
+  mileage: number;
+  complaint: string;
+  vin: string;
+  attachedFiles: AttachedFile[];
+}
+
+export interface GroundingSource {
+  title: string;
+  uri: string;
+}
+
+export interface ServiceItem {
+  name: string;
+  reason: string;
+  critical?: boolean;
+}
+
+export interface AnalysisResult {
+  id: string;
+  detailedIssues: string;
+  upsells: ServiceItem[];
+  salesScript: string;
+  predictiveAnalysis: { failureProbability: number; reasoning: string; } | null;
+  sources: GroundingSource[];
+  mermaidPie: string;
+  mermaidGantt: string;
+  costForecast: Array<{ mileage: string; cost: number }>;
+  categoryDistribution: Array<{ label: string; value: number }>;
+}
+
+export interface ChatMessage { role: 'user' | 'model'; text: string; sources?: GroundingSource[]; }
+
+// --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+const cleanJsonString = (str: string): string => str.replace(/```json/g, '').replace(/```/g, '').trim();
+
+const extractSources = (response: any): GroundingSource[] => {
+  const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+  return chunks.filter((c: any) => c.web).map((c: any) => ({ title: c.web.title, uri: c.web.uri }));
 };
+
+// --- СЕРВИСНАЯ ЛОГИКА ---
+async function performWebResearch(car: CarData): Promise<{ context: string, sources: GroundingSource[] }> {
+  const carString = `${car.make} ${car.model} ${car.year || ''}`;
+  const query = `Статистика неисправностей ${carString}, пробег ${car.mileage}км. Известные "болячки" и отзывы владельцев на Drive2 и Drom.`;
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: query,
+      config: { tools: [{ googleSearch: {} }], temperature: 0.1 }
+    });
+    return { context: response.text || "", sources: extractSources(response) };
+  } catch (e) {
+    return { context: "Внешний поиск недоступен.", sources: [] };
+  }
+}
+
+export async function analyzeCar(car: CarData): Promise<AnalysisResult> {
+  const research = await performWebResearch(car);
+  const parts: any[] = [];
+  
+  // Добавляем текстовое описание прикрепленных файлов для контекста
+  let filesContext = "КОНТЕКСТ ИЗ ПРИКРЕПЛЕННЫХ ДОКУМЕНТОВ (ТО, логи, акты):\n";
+  car.attachedFiles.forEach(file => {
+    if (file.type.startsWith('image/')) {
+      const base64Data = file.data.split(',')[1] || file.data;
+      parts.push({ inlineData: { mimeType: file.type, data: base64Data } });
+    } else {
+      filesContext += `Файл [${file.name}]: ${file.data.substring(0, 1000)}...\n`;
+    }
+  });
+
+  const systemInstruction = `
+    Ты — ведущий технический аналитик BI-AVTO PRO. 
+    ТВОЯ ПЕРВООЧЕРЕДНАЯ ЗАДАЧА: Анализировать прикрепленные пользователем файлы (акты выполненных работ, истории ТО, диагностические логи).
+    Если в файлах указано, что деталь менялась недавно — не предлагай её замену. 
+    Если в файлах виден износ или рекомендации мастеров — выноси это в ПРИОРИТЕТ.
+    ВТОРОСТЕПЕННАЯ ЗАДАЧА: Дополнить анализ статистическими данными (Drive2/Drom) по "болячкам" модели на данном пробеге.
+    Верни строго JSON.
+  `;
+
+  const prompt = `
+    АВТОМОБИЛЬ: ${car.make} ${car.model}, пробег ${car.mileage} км.
+    ЖАЛОБА: "${car.complaint}"
+    ${filesContext}
+    СТАТИСТИКА ИЗ СЕТИ: ${research.context}
+
+    Сформируй отчет:
+    1. detailedIssues - глубокий разбор на основе ФАЙЛОВ + статистики.
+    2. upsells - список работ (name, reason, critical).
+    3. predictiveAnalysis - вероятность поломки (0-100) и почему.
+    4. mermaidPie, mermaidGantt, costForecast, categoryDistribution для графиков.
+  `;
+  
+  parts.unshift({ text: prompt });
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-pro-preview',
+    contents: { parts },
+    config: { systemInstruction, responseMimeType: "application/json", temperature: 0.1 }
+  });
+
+  const parsed = JSON.parse(cleanJsonString(response.text || "{}"));
+  return { ...parsed, id: `BI-${Date.now()}`, sources: research.sources };
+}
+
+export async function lookupVin(vin: string) {
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: `Декодируй VIN: ${vin}. Верни JSON: make, model, year.`,
+    config: { responseMimeType: "application/json", temperature: 0 }
+  });
+  return JSON.parse(cleanJsonString(response.text || "null"));
+}
+
+// --- UI КОМПОНЕНТЫ ---
 
 const MermaidViewer: React.FC<{ chart: string; id: string }> = ({ chart, id }) => {
   const ref = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
-    if (ref.current && chart && chart.trim().length > 0) {
+    if (ref.current && chart) {
       ref.current.removeAttribute('data-processed');
       try {
-        if (typeof mermaid !== 'undefined' && mermaid.render) {
-          mermaid.render(`mermaid-${id}-${Date.now()}`, chart).then((res) => {
-            if (ref.current) ref.current.innerHTML = res.svg;
-          }).catch(err => {
-            console.error("Mermaid render error:", err);
-            if (ref.current) ref.current.innerHTML = `<p class="text-[10px] text-slate-400">Ошибка отрисовки графика</p>`;
-          });
-        } else {
-          if (ref.current) ref.current.innerHTML = `<p class="text-[10px] text-slate-400 italic">Визуализация недоступна</p>`;
-        }
-      } catch (e) {
-        console.error("Mermaid block failed:", e);
-      }
+        mermaid.render(`mermaid-${id}-${Date.now()}`, chart).then((res) => {
+          if (ref.current) ref.current.innerHTML = res.svg;
+        });
+      } catch (e) { console.error("Mermaid error:", e); }
     }
   }, [chart, id]);
-
   return (
-    <div className="bg-white border border-slate-200 rounded-[24px] p-4 flex items-center justify-center min-h-[250px] w-full overflow-hidden shadow-sm report-card">
+    <div className="bg-white border border-slate-200 rounded-[24px] p-4 flex items-center justify-center min-h-[250px] shadow-sm overflow-hidden">
       <div ref={ref} className="w-full flex justify-center scale-90" />
     </div>
   );
 };
 
+// --- ГЛАВНОЕ ПРИЛОЖЕНИЕ ---
 const App: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [vinLoading, setVinLoading] = useState(false);
-  const [scanLoading, setScanLoading] = useState(false);
+  const [carData, setCarData] = useState<CarData>({
+    make: '', model: '', mileage: 0, complaint: '', vin: '', attachedFiles: []
+  });
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [showChat, setShowChat] = useState(false);
-  const [showSidebar, setShowSidebar] = useState(false);
-  const [appError, setAppError] = useState<string | null>(null);
-  const [shareSuccess, setShareSuccess] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const [isExportingHtml, setIsExportingHtml] = useState(false);
-  
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
-  const [isChatLoading, setIsChatLoading] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
-  const chatInstance = useRef<any>(null);
-  const reportRef = useRef<HTMLDivElement>(null);
-
-  const [carData, setCarData] = useState<CarData>({
-    make: '', model: '', year: undefined, mileage: 0, complaint: '', vin: '', attachedFiles: []
-  });
-  
-  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
-  const [history, setHistory] = useState<InspectionHistory[]>([]);
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.HISTORY);
-    if (saved) {
-      try { setHistory(JSON.parse(saved)); } catch (e) { console.error(e); }
-    }
+    mermaid.initialize({ startOnLoad: false, theme: 'neutral', fontFamily: 'Inter' });
   }, []);
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages, isChatLoading]);
-
-  const handleVinLookup = async (forcedVin?: string) => {
-    const vinToSearch = forcedVin || carData.vin;
-    if (vinToSearch.length < 5) return;
+  const handleVinLookup = async () => {
+    if (carData.vin.length < 5) return;
     setVinLoading(true);
     try {
-      const res = await lookupVin(vinToSearch);
-      if (res) {
-        setCarData(prev => ({ 
-          ...prev, 
-          vin: vinToSearch,
-          make: res.make || prev.make, 
-          model: res.model || prev.model, 
-          year: res.year || prev.year 
-        }));
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setVinLoading(false);
-    }
+      const res = await lookupVin(carData.vin);
+      if (res) setCarData(p => ({ ...p, make: res.make || p.make, model: res.model || p.model, year: res.year || p.year }));
+    } finally { setVinLoading(false); }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-    Array.from(files).forEach((file: File) => {
+    if (!e.target.files) return;
+    Array.from(e.target.files).forEach(file => {
       const reader = new FileReader();
-      reader.onload = async (event) => {
-        const base64Data = event.target?.result as string;
-        
-        const newFile = {
-          name: file.name,
-          type: file.type,
-          data: base64Data
-        };
-
-        setCarData(prev => ({
-          ...prev,
-          attachedFiles: [...prev.attachedFiles, newFile]
-        }));
-
-        if (file.type.startsWith('image/')) {
-          setScanLoading(true);
-          try {
-            const extractedVin = await extractVinFromImage(base64Data, file.type);
-            if (extractedVin) {
-              await handleVinLookup(extractedVin);
-            }
-          } catch (err) {
-            console.error("Scan failed:", err);
-          } finally {
-            setScanLoading(false);
-          }
-        }
+      reader.onload = (ev) => {
+        const base64 = ev.target?.result as string;
+        setCarData(p => ({ ...p, attachedFiles: [...p.attachedFiles, { name: file.name, type: file.type, data: base64 }] }));
       };
       if (file.type.startsWith('image/')) reader.readAsDataURL(file);
       else reader.readAsText(file);
     });
   };
 
-  const handleRunAnalysis = async () => {
-    if (!carData.make || !carData.model) {
-      alert("Укажите марку и модель автомобиля");
-      return;
-    }
+  const removeFile = (index: number) => {
+    setCarData(p => ({ ...p, attachedFiles: p.attachedFiles.filter((_, i) => i !== index) }));
+  };
+
+  const runAnalysis = async () => {
+    if (!carData.make || !carData.model) return alert("Укажите марку и модель");
     setLoading(true);
-    setAppError(null);
     try {
-      const result = await analyzeCar(carData);
-      setAnalysis(result);
-      const newHist = { 
-        id: result.id, 
-        date: new Date().toLocaleDateString(), 
-        model: `${carData.make} ${carData.model}`, 
-        status: 'OK' 
-      };
-      const updatedHistory = [newHist, ...history].slice(0, 20);
-      setHistory(updatedHistory);
-      localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(updatedHistory));
-      localStorage.setItem(`${STORAGE_KEYS.ANALYSIS_PREFIX}${result.id}`, JSON.stringify(result));
-    } catch (error) {
-      console.error("Analysis error:", error);
-      setAppError("Ошибка при анализе. Попробуйте снова.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSendMessage = async () => {
-    if (!chatInput.trim() || isChatLoading) return;
-    const msg = chatInput;
-    setChatMessages(prev => [...prev, { role: 'user', text: msg }]);
-    setChatInput('');
-    setIsChatLoading(true);
-    try {
-      if (!chatInstance.current) chatInstance.current = startDiagnosticChat(carData, analysis);
-      const res = await chatInstance.current.sendMessage({ message: msg });
-      const sources = extractSources(res);
-      setChatMessages(prev => [...prev, { 
-        role: 'model', 
-        text: res.text || 'Нет ответа',
-        sources: sources.length > 0 ? sources : undefined
-      }]);
-    } catch (e) {
-      console.error("Chat error:", e);
-      setChatMessages(prev => [...prev, { role: 'model', text: 'Ошибка соединения с ассистентом.' }]);
-    } finally {
-      setIsChatLoading(false);
-    }
-  };
-
-  const handleShare = async () => {
-    if (!analysis) return;
-    const shareData = {
-      title: `BI-Avto PRO: Отчет по ${carData.make} ${carData.model}`,
-      text: `Результаты диагностики автомобиля ${carData.make} ${carData.model}. Рекомендовано работ: ${analysis.upsells.length}.`,
-      url: window.location.href,
-    };
-
-    try {
-      if (navigator.share) {
-        await navigator.share(shareData);
-      } else {
-        await navigator.clipboard.writeText(window.location.href);
-        setShareSuccess(true);
-        setTimeout(() => setShareSuccess(false), 2000);
-      }
+      const res = await analyzeCar(carData);
+      setAnalysis(res);
     } catch (err) {
-      console.error('Error sharing:', err);
-    }
+      console.error(err);
+      alert("Ошибка анализа. Проверьте ключ API.");
+    } finally { setLoading(false); }
   };
-
-  const handleDownloadPdf = async () => {
-    if (!reportRef.current || !analysis) return;
-    setIsExporting(true);
-    
-    const originalClass = reportRef.current.className;
-    reportRef.current.classList.add('export-mode');
-
-    try {
-      const canvas = await html2canvas(reportRef.current, {
-        scale: 3, 
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        logging: false,
-      });
-      
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
-      const pdf = new jsPDF({
-        orientation: 'p',
-        unit: 'mm',
-        format: 'a4',
-      });
-
-      const imgProps = pdf.getImageProperties(imgData);
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-      
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`Отчет-BI-AVTO-${carData.make}-${analysis.id}.pdf`);
-    } catch (err) {
-      console.error('PDF Export failed:', err);
-    } finally {
-      reportRef.current.className = originalClass;
-      setIsExporting(false);
-    }
-  };
-
-  const handleExportHtml = () => {
-    if (!analysis) return;
-    setIsExportingHtml(true);
-
-    const upsellsHtml = analysis.upsells.map(u => `
-      <div class="p-5 rounded-2xl border ${u.critical ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-100'} mb-4 flex items-start gap-4 shadow-sm">
-        <div class="mt-1">
-          ${u.critical ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>' : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>'}
-        </div>
-        <div class="flex-1">
-          <div class="flex justify-between items-center mb-1">
-            <h4 class="font-bold text-gray-900 leading-none">${u.name}</h4>
-            ${u.critical ? '<span class="text-[9px] font-black bg-red-600 text-white px-2 py-0.5 rounded uppercase tracking-tighter">Критично</span>' : ''}
-          </div>
-          <p class="text-xs text-gray-600 leading-relaxed">${u.reason}</p>
-        </div>
-      </div>
-    `).join('');
-
-    const sourcesHtml = analysis.sources?.map(s => `
-        <a href="${s.uri}" target="_blank" class="text-[11px] bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full border border-blue-100 hover:bg-blue-100 transition-colors inline-flex items-center gap-1 mb-2 mr-2 decoration-none">
-          ${s.title} 🔗
-        </a>
-    `).join('') || '';
-
-    const htmlContent = `
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Отчет BI-AVTO: ${carData.make} ${carData.model}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
-    <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #1e293b; }
-        .glass-card { background: white; border-radius: 32px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); padding: 40px; border: 1px solid rgba(0,0,0,0.05); }
-        .gradient-header { background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); }
-    </style>
-</head>
-<body class="p-4 md:p-10">
-    <div class="max-w-4xl mx-auto space-y-10">
-        <!-- Brand Header -->
-        <header class="glass-card flex flex-col md:flex-row justify-between items-start md:items-center gap-8 border-none overflow-hidden relative">
-            <div class="absolute top-0 right-0 w-64 h-64 bg-blue-600/5 rounded-full -mr-32 -mt-32 blur-3xl"></div>
-            <div class="flex items-center gap-6 relative z-10">
-                <div class="bg-blue-600 p-4 rounded-3xl shadow-xl shadow-blue-600/20">
-                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                </div>
-                <div>
-                    <h1 class="text-3xl font-black tracking-tighter uppercase text-slate-900">BI-AVTO <span class="text-blue-600">PRO</span></h1>
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none mt-1">Цифровой паспорт и диагностика</p>
-                </div>
-            </div>
-            <div class="text-left md:text-right relative z-10">
-                <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">ID Отчета: ${analysis.id}</p>
-                <p class="text-sm font-extrabold text-slate-900">${new Date().toLocaleDateString('ru-RU')}</p>
-                <p class="text-xs text-slate-400">Сформировано системой BI-AVTO AI</p>
-            </div>
-        </header>
-
-        <!-- Vehicle Stats Grid -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-center">
-                <p class="text-[9px] font-black text-slate-400 uppercase tracking-tighter mb-2">Автомобиль</p>
-                <p class="font-extrabold text-slate-900 text-lg leading-tight">${carData.make} ${carData.model}</p>
-            </div>
-            <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-center">
-                <p class="text-[9px] font-black text-slate-400 uppercase tracking-tighter mb-2">Год выпуска</p>
-                <p class="font-extrabold text-slate-900 text-lg">${carData.year || 'н/д'}</p>
-            </div>
-            <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-center">
-                <p class="text-[9px] font-black text-slate-400 uppercase tracking-tighter mb-2">Пробег</p>
-                <p class="font-extrabold text-slate-900 text-lg">${carData.mileage.toLocaleString()} км</p>
-            </div>
-            <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-center">
-                <p class="text-[9px] font-black text-slate-400 uppercase tracking-tighter mb-2">VIN-код</p>
-                <p class="font-bold text-blue-600 font-mono text-sm">${carData.vin || 'НЕТ ДАННЫХ'}</p>
-            </div>
-        </div>
-
-        <!-- Risk Level -->
-        <div class="glass-card border-none overflow-hidden relative ${analysis.predictiveAnalysis?.failureProbability! > 60 ? 'bg-red-50' : 'bg-orange-50'}">
-            <div class="flex items-center justify-between mb-8">
-                <div class="flex items-center gap-4">
-                    <div class="p-3 rounded-2xl ${analysis.predictiveAnalysis?.failureProbability! > 60 ? 'bg-red-600 text-white' : 'bg-orange-500 text-white'}">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
-                    </div>
-                    <div>
-                        <h3 class="text-xs font-black uppercase tracking-widest text-slate-500">Предиктивный риск поломки</h3>
-                        <p class="text-[10px] text-slate-400 mt-0.5 italic">Данные Drive2, Drom и профильных форумов</p>
-                    </div>
-                </div>
-                <div class="text-5xl font-black ${analysis.predictiveAnalysis?.failureProbability! > 60 ? 'text-red-600' : 'text-orange-600'} tracking-tighter">${analysis.predictiveAnalysis?.failureProbability || 0}%</div>
-            </div>
-            <p class="text-sm font-medium text-slate-700 leading-relaxed border-l-4 ${analysis.predictiveAnalysis?.failureProbability! > 60 ? 'border-red-600' : 'border-orange-500'} pl-6 italic bg-white/50 py-4 rounded-r-xl">${analysis.predictiveAnalysis?.reasoning || ''}</p>
-        </div>
-
-        <!-- Technical Verdict -->
-        <div class="glass-card">
-            <div class="flex items-center gap-4 mb-8">
-                <div class="bg-blue-50 p-3 rounded-2xl text-blue-600">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                </div>
-                <h2 class="text-xl font-black uppercase tracking-tight text-slate-900">Технический вердикт</h2>
-            </div>
-            <div class="text-slate-700 text-sm leading-loose whitespace-pre-line text-justify">${analysis.detailedIssues}</div>
-            
-            ${sourcesHtml ? `
-            <div class="mt-10 pt-8 border-t border-slate-100">
-                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Найдено на форумах и авто-сайтах:</p>
-                <div class="flex flex-wrap">${sourcesHtml}</div>
-            </div>
-            ` : ''}
-        </div>
-
-        <!-- Maintenance Plan -->
-        <div class="glass-card">
-            <div class="flex items-center gap-4 mb-8">
-                <div class="bg-emerald-50 p-3 rounded-2xl text-emerald-600">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                </div>
-                <h2 class="text-xl font-black uppercase tracking-tight text-slate-900">Рекомендуемое обслуживание</h2>
-            </div>
-            <div>${upsellsHtml}</div>
-        </div>
-
-        <footer class="text-center py-10">
-            <div class="inline-flex items-center gap-3 px-6 py-2 bg-slate-200/50 rounded-full border border-slate-200">
-                <span class="text-[9px] font-black text-slate-500 uppercase tracking-widest italic">Безопасность подтверждена BI-AVTO PRO Diagnostic Engine</span>
-            </div>
-            <p class="text-[10px] text-slate-400 mt-6 font-medium uppercase tracking-[0.2em]">© 2025 BI-AVTO PRO | AI-DRIVEN PREDICTIVE ANALYTICS</p>
-        </footer>
-    </div>
-</body>
-</html>
-    `;
-
-    const blob = new Blob([htmlContent], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Отчет-BI-AVTO-${carData.make}-${carData.model}.html`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    setIsExportingHtml(false);
-  };
-
-  if (appError) {
-    return (
-      <div className="h-screen bg-slate-50 flex items-center justify-center p-10 text-center text-slate-900">
-        <div className="max-w-md space-y-6">
-          <AlertTriangle size={64} className="mx-auto text-red-500" />
-          <h1 className="text-2xl font-bold">Ошибка системы</h1>
-          <p className="text-slate-600">{appError}</p>
-          <button onClick={() => setAppError(null)} className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors">Попробовать снова</button>
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans">
-      <aside className={`no-print w-80 border-r border-slate-200 bg-white flex flex-col transition-all z-50 fixed md:relative inset-y-0 ${showSidebar ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
-        <div className="p-8 border-b border-slate-100 flex items-center justify-between">
+    <div className="flex h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
+      <main className="flex-1 flex flex-col relative overflow-hidden">
+        <header className="h-20 border-b border-slate-200 bg-white/80 backdrop-blur-xl px-8 flex items-center justify-between z-40">
           <div className="flex items-center gap-3">
             <Zap className="text-blue-600 fill-blue-600" size={24} />
-            <span className="font-black text-xl tracking-tighter uppercase text-slate-900">BI-AVTO</span>
+            <h1 className="font-black text-xl tracking-tighter uppercase">BI-AVTO <span className="text-blue-600">PRO</span></h1>
           </div>
-          <button onClick={() => setShowSidebar(false)} className="md:hidden text-slate-400"><X size={24} /></button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2">Архив</h3>
-          {history.length === 0 && <p className="text-xs text-slate-400 px-2 italic">История пуста</p>}
-          {history.map(h => (
-            <div key={h.id} onClick={() => {
-              const data = localStorage.getItem(`${STORAGE_KEYS.ANALYSIS_PREFIX}${h.id}`);
-              if (data) setAnalysis(JSON.parse(data));
-              setShowSidebar(false);
-            }} className="p-3 rounded-xl hover:bg-slate-50 cursor-pointer border border-transparent hover:border-slate-100 transition-all">
-              <div className="text-sm font-bold truncate text-slate-900">{h.model}</div>
-              <div className="text-[10px] text-slate-500">{h.date}</div>
-            </div>
-          ))}
-        </div>
-      </aside>
-
-      <main className="flex-1 flex flex-col relative overflow-hidden">
-        <header className="h-20 border-b border-slate-200 bg-white/80 backdrop-blur-xl px-6 flex items-center justify-between z-40 no-print">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setShowSidebar(!showSidebar)} className="md:hidden text-slate-900"><Menu size={24} /></button>
-            <div className="flex items-center gap-4 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200">
-              <Activity size={18} className="text-blue-600" />
-              <span className="text-sm font-bold truncate max-w-[150px] text-slate-700">{carData.make ? `${carData.make} ${carData.model}` : 'Новая диагностика'}</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            {analysis && (
-              <>
-                <button 
-                  onClick={handleShare} 
-                  title="Копировать ссылку"
-                  className={`p-2 rounded-lg transition-all duration-300 flex items-center gap-2 ${shareSuccess ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500 hover:text-slate-900'}`}
-                >
-                  {shareSuccess ? <ClipboardCheck size={20} /> : <Share2 size={20} />}
-                </button>
-                <button 
-                  onClick={handleExportHtml} 
-                  disabled={isExportingHtml}
-                  title="Экспорт в интерактивный HTML"
-                  className="p-2 bg-emerald-100 text-emerald-600 rounded-lg hover:bg-emerald-600 hover:text-white transition-all disabled:opacity-50 flex items-center gap-2"
-                >
-                   {isExportingHtml ? <Loader2 className="animate-spin" size={20} /> : <FileCode size={20} />}
-                   <span className="text-xs font-bold hidden sm:inline uppercase tracking-tighter">HTML Отчет</span>
-                </button>
-                <button 
-                  onClick={handleDownloadPdf} 
-                  disabled={isExporting}
-                  title="Скачать PDF"
-                  className="p-2 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all disabled:opacity-50 flex items-center gap-2"
-                >
-                  {isExporting ? <Loader2 className="animate-spin" size={20} /> : <FileDown size={20} />}
-                  <span className="text-xs font-bold hidden sm:inline uppercase tracking-tighter">PDF Отчет</span>
-                </button>
-                <button 
-                  onClick={() => window.print()} 
-                  title="Печать"
-                  className="p-2 bg-slate-100 rounded-lg text-slate-500 hover:text-slate-900 transition-colors"
-                >
-                  <Printer size={20} />
-                </button>
-              </>
-            )}
-            <button onClick={() => setShowChat(!showChat)} className={`p-2 rounded-lg transition-colors ${showChat ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-900'}`}>
-              <MessageSquare size={20} />
-            </button>
-          </div>
+          <button onClick={() => setShowChat(!showChat)} className={`p-2 rounded-xl transition-all ${showChat ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-900'}`}>
+            <MessageSquare size={20} />
+          </button>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-6 md:p-12 no-print">
+        <div className="flex-1 overflow-y-auto p-8 lg:p-12">
           <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-10">
-            <div className="lg:col-span-4 space-y-6 no-print">
-              <div className="bg-white border border-slate-200 p-8 rounded-[32px] space-y-8 shadow-xl">
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <label className="text-[9px] font-bold text-slate-500 uppercase">VIN-КОД</label>
-                    {scanLoading && <div className="flex items-center gap-2 text-[9px] text-blue-600 font-bold uppercase animate-pulse"><Loader2 size={10} className="animate-spin" /> Сканирую фото...</div>}
-                  </div>
+            {/* Левая панель: Ввод данных */}
+            <div className="lg:col-span-4 space-y-6">
+              <div className="bg-white border border-slate-200 p-8 rounded-[32px] shadow-xl space-y-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">VIN-КОД</label>
                   <div className="flex gap-2">
-                    <input className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm uppercase text-slate-900 font-mono tracking-widest focus:border-blue-500 focus:bg-white outline-none transition-all" value={carData.vin} onChange={e => setCarData({...carData, vin: e.target.value.toUpperCase()})} placeholder="WBA..." />
-                    <button onClick={() => handleVinLookup()} disabled={vinLoading} className="p-2 bg-blue-600 text-white rounded-lg disabled:opacity-50 hover:bg-blue-700 transition-colors">
+                    <input className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm uppercase font-mono focus:ring-2 focus:ring-blue-500/20 outline-none" value={carData.vin} onChange={e => setCarData({...carData, vin: e.target.value.toUpperCase()})} placeholder="WBA..." />
+                    <button onClick={handleVinLookup} disabled={vinLoading} className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors">
                       {vinLoading ? <Loader2 className="animate-spin" size={18} /> : <Search size={18} />}
                     </button>
                   </div>
@@ -526,164 +248,120 @@ const App: React.FC = () => {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <label className="text-[9px] font-bold text-slate-500 uppercase">Марка</label>
-                    <input className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:bg-white outline-none transition-all" placeholder="Toyota" value={carData.make} onChange={e => setCarData({...carData, make: e.target.value})} />
+                    <label className="text-[9px] font-bold text-slate-400 uppercase">Марка</label>
+                    <input className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm" placeholder="BMW" value={carData.make} onChange={e => setCarData({...carData, make: e.target.value})} />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[9px] font-bold text-slate-500 uppercase">Модель</label>
-                    <input className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:bg-white outline-none transition-all" placeholder="Camry" value={carData.model} onChange={e => setCarData({...carData, model: e.target.value})} />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-bold text-slate-500 uppercase">Год</label>
-                    <input type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:bg-white outline-none transition-all" placeholder="2020" value={carData.year || ''} onChange={e => setCarData({...carData, year: parseInt(e.target.value) || undefined})} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-bold text-slate-500 uppercase">Пробег</label>
-                    <input type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:bg-white outline-none transition-all" placeholder="85000" value={carData.mileage || ''} onChange={e => setCarData({...carData, mileage: parseInt(e.target.value) || 0})} />
+                    <label className="text-[9px] font-bold text-slate-400 uppercase">Модель</label>
+                    <input className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm" placeholder="X5" value={carData.model} onChange={e => setCarData({...carData, model: e.target.value})} />
                   </div>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[9px] font-bold text-slate-500 uppercase">Жалоба</label>
-                  <textarea rows={4} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 resize-none focus:border-blue-500 focus:bg-white outline-none transition-all" value={carData.complaint} onChange={e => setCarData({...carData, complaint: e.target.value})} placeholder="Опишите проблему..." />
+                  <label className="text-[9px] font-bold text-slate-400 uppercase">Пробег</label>
+                  <input type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm" placeholder="100000" value={carData.mileage || ''} onChange={e => setCarData({...carData, mileage: parseInt(e.target.value) || 0})} />
                 </div>
 
-                <div className="space-y-4">
-                  <label className="flex flex-col items-center justify-center w-full p-4 border-2 border-dashed border-slate-200 rounded-2xl cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all bg-slate-50">
-                    <div className="flex gap-2 mb-2">
-                       <UploadCloud size={24} className="text-slate-400" />
-                       <Camera size={24} className="text-blue-600" />
-                    </div>
-                    <span className="text-[10px] uppercase font-bold text-slate-500 text-center">Загрузите СТС или фото VIN</span>
-                    <input type="file" multiple className="hidden" onChange={handleFileUpload} accept="image/*,.pdf,.txt" />
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase">Жалоба</label>
+                  <textarea className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm h-24 resize-none" placeholder="Стук в подвеске, ТО..." value={carData.complaint} onChange={e => setCarData({...carData, complaint: e.target.value})} />
+                </div>
+                
+                <div className="space-y-3">
+                  <label className="flex flex-col items-center justify-center w-full p-6 border-2 border-dashed border-slate-200 rounded-[24px] cursor-pointer hover:bg-blue-50/50 transition-all">
+                    <UploadCloud size={24} className="text-blue-600 mb-2" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase">Прикрепить ТО / Акты / Логи</span>
+                    <input type="file" multiple className="hidden" onChange={handleFileUpload} />
                   </label>
-                  <div className="flex flex-wrap gap-2">
-                    {carData.attachedFiles.map((f, i) => (
-                      <div key={i} className="px-2 py-1 bg-slate-100 rounded text-[10px] truncate max-w-[100px] border border-slate-200 text-slate-600">{f.name}</div>
+                  
+                  <div className="space-y-2">
+                    {carData.attachedFiles.map((file, i) => (
+                      <div key={i} className="flex items-center justify-between p-2 bg-slate-50 border border-slate-100 rounded-lg text-xs">
+                        <div className="flex items-center gap-2 truncate">
+                          <Paperclip size={12} className="text-slate-400" />
+                          <span className="truncate">{file.name}</span>
+                        </div>
+                        <button onClick={() => removeFile(i)} className="text-red-400 hover:text-red-600"><Trash2 size={14}/></button>
+                      </div>
                     ))}
                   </div>
                 </div>
 
-                <button onClick={handleRunAnalysis} disabled={loading} className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-3 disabled:bg-slate-200 disabled:text-slate-400 shadow-lg shadow-blue-600/20">
-                  {loading ? <Loader2 className="animate-spin" size={18} /> : <Zap size={18} />}
-                  {loading ? 'Анализ...' : 'Запустить анализ'}
+                <button onClick={runAnalysis} disabled={loading} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-blue-600/20 hover:bg-blue-700 disabled:bg-slate-200 transition-all flex items-center justify-center gap-2">
+                  {loading ? <Loader2 className="animate-spin" size={16} /> : <Zap size={16} />}
+                  {loading ? 'Анализ данных...' : 'Запустить диагностику'}
                 </button>
               </div>
             </div>
 
-            <div className="lg:col-span-8 space-y-12">
+            {/* Правая панель: Результаты */}
+            <div className="lg:col-span-8">
               {loading ? (
-                <SkeletonLoader />
+                <div className="space-y-6 animate-pulse">
+                  <div className="h-64 bg-slate-100 rounded-[32px]"></div>
+                  <div className="h-32 bg-slate-100 rounded-[32px]"></div>
+                  <div className="h-64 bg-slate-100 rounded-[32px]"></div>
+                </div>
               ) : !analysis ? (
-                <div className="h-[600px] border-2 border-dashed border-slate-200 rounded-[40px] flex flex-col items-center justify-center bg-white no-print">
-                  <Database size={48} className="text-slate-200 mb-6" />
-                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Ожидание данных для аналитики</p>
+                <div className="h-[500px] border-2 border-dashed border-slate-200 rounded-[40px] flex flex-col items-center justify-center bg-white">
+                  <Database size={48} className="text-slate-200 mb-4" />
+                  <p className="text-[11px] font-black text-slate-300 uppercase tracking-widest">Ожидание данных для анализа</p>
                 </div>
               ) : (
-                <div ref={reportRef} className="space-y-12 animate-in fade-in slide-in-from-bottom-10 duration-700 p-4 md:p-0">
-                  <div className="hidden export-mode:block print:block mb-12 border-b-2 border-blue-600 pb-8">
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-center gap-4">
-                         <div className="bg-blue-600 p-3 rounded-2xl">
-                           <Zap className="text-white" size={32} />
-                         </div>
-                         <div>
-                            <h1 className="text-3xl font-black tracking-tighter uppercase text-slate-900">BI-AVTO PRO</h1>
-                            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Интеллектуальный диагностический отчет</p>
-                         </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">ID Отчета</div>
-                        <div className="text-sm font-mono font-bold text-slate-900">{analysis.id}</div>
-                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-3 mb-1">Дата формирования</div>
-                        <div className="text-sm font-bold text-slate-900">{new Date().toLocaleDateString('ru-RU')}</div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-4 gap-6 mt-12 bg-slate-50 border border-slate-200 p-6 rounded-[24px]">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-slate-400"><Car size={14}/><span className="text-[9px] font-black uppercase tracking-tighter">Автомобиль</span></div>
-                        <div className="font-bold text-sm text-slate-900">{carData.make} {carData.model}</div>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-slate-400"><Calendar size={14}/><span className="text-[9px] font-black uppercase tracking-tighter">Год выпуска</span></div>
-                        <div className="font-bold text-sm text-slate-900">{carData.year || 'н/д'}</div>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-slate-400"><Gauge size={14}/><span className="text-[9px] font-black uppercase tracking-tighter">Пробег</span></div>
-                        <div className="font-bold text-sm text-slate-900">{carData.mileage.toLocaleString()} км</div>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-slate-400"><Fingerprint size={14}/><span className="text-[9px] font-black uppercase tracking-tighter">VIN-Код</span></div>
-                        <div className="font-bold text-sm font-mono text-slate-900">{carData.vin || 'НЕТ ДАННЫХ'}</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 report-section">
+                <div className="space-y-10 animate-in fade-in slide-in-from-bottom-8 duration-500">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <MermaidViewer chart={analysis.mermaidPie} id="pie" />
                     <MermaidViewer chart={analysis.mermaidGantt} id="gantt" />
                   </div>
 
-                  <div className="report-section">
-                    <InteractiveDashboard analysis={analysis} />
-                  </div>
-                  
-                  <div className="report-section">
-                    <PredictiveAnalysisModule data={analysis.predictiveAnalysis!} />
-                  </div>
-
-                  {analysis.sources && analysis.sources.length > 0 && (
-                    <div className="bg-white border border-slate-200 p-8 rounded-[32px] shadow-sm report-section report-card no-print">
-                      <div className="flex items-center gap-4 mb-8">
-                        <Search size={24} className="text-blue-600" />
-                        <h2 className="text-md font-black uppercase tracking-widest text-slate-900">Источники (RU)</h2>
+                  <div className={`p-8 rounded-[32px] border ${analysis.predictiveAnalysis?.failureProbability! > 60 ? 'bg-red-50 border-red-100' : 'bg-orange-50 border-orange-100'}`}>
+                    <div className="flex justify-between items-center mb-4">
+                      <div className="flex items-center gap-3">
+                        <Activity className={analysis.predictiveAnalysis?.failureProbability! > 60 ? 'text-red-600' : 'text-orange-600'} />
+                        <h2 className="text-xs font-black uppercase tracking-widest text-slate-500">Вероятность поломки</h2>
                       </div>
-                      <div className="flex flex-wrap gap-3">
-                        {analysis.sources.map((s, i) => (
-                          <a key={i} href={s.uri} target="_blank" rel="noopener noreferrer" className="text-[11px] bg-slate-50 hover:bg-slate-100 border border-slate-200 px-4 py-2 rounded-xl text-blue-600 transition-all font-medium flex items-center gap-2 truncate max-w-[250px]">
-                            <ExternalLink size={12} /> {s.title}
-                          </a>
-                        ))}
-                      </div>
+                      <span className={`text-4xl font-black ${analysis.predictiveAnalysis?.failureProbability! > 60 ? 'text-red-600' : 'text-orange-600'}`}>{analysis.predictiveAnalysis?.failureProbability}%</span>
                     </div>
-                  )}
-
-                  <div className="bg-white border border-slate-200 p-10 rounded-[40px] shadow-sm report-section report-card">
-                    <div className="flex items-center gap-4 text-blue-600 mb-8">
-                      <FileText size={24} />
-                      <h2 className="text-lg font-black uppercase tracking-widest text-slate-900">Вердикт системы</h2>
-                    </div>
-                    <div className="text-slate-700 text-[15px] leading-relaxed whitespace-pre-line font-medium text-justify">
-                      {analysis.detailedIssues}
-                    </div>
+                    <p className="text-sm font-medium text-slate-700 leading-relaxed bg-white/50 p-4 rounded-2xl">{analysis.predictiveAnalysis?.reasoning}</p>
                   </div>
 
-                  <div className="bg-white border border-slate-200 p-8 rounded-[32px] shadow-sm report-section report-card">
-                    <div className="flex items-center gap-4 mb-8">
-                      <TrendingUp className="text-emerald-600" size={24} />
-                      <h2 className="text-md font-black uppercase tracking-widest text-slate-900">Рекомендации</h2>
+                  <div className="bg-white border border-slate-200 p-10 rounded-[40px] shadow-sm">
+                    <div className="flex items-center gap-3 mb-6">
+                      <FileText className="text-blue-600" size={24} />
+                      <h2 className="text-lg font-black uppercase tracking-tight">Технический вердикт (AI)</h2>
+                    </div>
+                    <div className="text-slate-600 text-sm leading-relaxed whitespace-pre-line text-justify">{analysis.detailedIssues}</div>
+                    
+                    {analysis.sources.length > 0 && (
+                      <div className="mt-8 pt-8 border-t border-slate-100">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Найдено в базах знаний:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {analysis.sources.map((s, i) => (
+                            <a key={i} href={s.uri} target="_blank" className="text-[10px] bg-blue-50 text-blue-600 px-3 py-1 rounded-full border border-blue-100 hover:bg-blue-100 transition-colors flex items-center gap-1">
+                              {s.title} <ExternalLink size={10} />
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="bg-white border border-slate-200 p-8 rounded-[32px] shadow-sm">
+                    <div className="flex items-center gap-3 mb-6">
+                      <TrendingUp className="text-emerald-600" size={20} />
+                      <h2 className="text-md font-black uppercase tracking-widest">План обслуживания</h2>
                     </div>
                     <div className="space-y-4">
                       {analysis.upsells.map((u, i) => (
-                        <div key={i} className={`p-6 rounded-2xl border ${u.critical ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100'}`}>
-                          <div className="flex justify-between items-start">
-                            <span className="text-sm font-bold text-slate-900">{u.name}</span>
-                            {u.critical && <span className="text-[9px] font-black text-red-600 border border-red-200 px-2 py-1 rounded-md uppercase tracking-tighter bg-red-50">Критично</span>}
+                        <div key={i} className={`p-5 rounded-2xl border ${u.critical ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100'}`}>
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="font-bold text-sm text-slate-800">{u.name}</span>
+                            {u.critical && <span className="text-[9px] font-black bg-red-600 text-white px-2 py-0.5 rounded">КРИТИЧНО</span>}
                           </div>
-                          <p className="text-[12px] text-slate-600 mt-3 leading-relaxed">{u.reason}</p>
+                          <p className="text-xs text-slate-500 leading-relaxed">{u.reason}</p>
                         </div>
                       ))}
                     </div>
-                  </div>
-
-                  <div className="hidden export-mode:flex print:flex justify-between items-center mt-20 pt-8 border-t border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-widest">
-                    <div>© BI-AVTO PRO Diagnostic Engine</div>
-                    <div>Сформировано автоматически AI-системой</div>
-                    <div>Стр. 1 из 1</div>
                   </div>
                 </div>
               )}
@@ -691,46 +369,28 @@ const App: React.FC = () => {
           </div>
         </div>
 
+        {/* AI Chat */}
         {showChat && (
-          <div className="fixed inset-y-0 right-0 w-full md:w-[600px] bg-white border-l border-slate-200 shadow-2xl z-[100] flex flex-col animate-in slide-in-from-right duration-500 no-print">
+          <div className="fixed inset-y-0 right-0 w-full md:w-[500px] bg-white border-l border-slate-200 shadow-2xl z-[100] flex flex-col animate-in slide-in-from-right duration-300">
             <div className="p-8 border-b border-slate-100 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <Bot size={24} className="text-blue-600" />
-                <span className="font-black uppercase text-[11px] tracking-widest text-slate-900">AI Мастер</span>
-              </div>
-              <button onClick={() => setShowChat(false)} className="text-slate-400 hover:text-slate-900 transition-colors"><X size={24} /></button>
+              <div className="flex items-center gap-3"><Bot className="text-blue-600" /><span className="font-black uppercase text-xs tracking-widest">Технический Ассистент</span></div>
+              <button onClick={() => setShowChat(false)} className="text-slate-400 hover:text-slate-900"><X size={20} /></button>
             </div>
-            <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar bg-slate-50/50">
+            <div className="flex-1 overflow-y-auto p-8 space-y-4 bg-slate-50">
               {chatMessages.map((m, i) => (
                 <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
-                  <div className={`max-w-[85%] p-4 rounded-2xl text-[13px] ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-white text-slate-700 border border-slate-200 shadow-sm'}`}>
-                    {m.text}
-                  </div>
-                  {m.sources && m.sources.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2 max-w-[85%]">
-                      {m.sources.map((s, si) => (
-                        <a key={si} href={s.uri} target="_blank" rel="noopener noreferrer" className="text-[9px] text-blue-600 hover:underline bg-white px-2 py-1 rounded border border-slate-100 transition-colors shadow-sm">
-                          {s.title}
-                        </a>
-                      ))}
-                    </div>
-                  )}
+                  <div className={`max-w-[85%] p-4 rounded-2xl text-xs ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-700 shadow-sm'}`}>{m.text}</div>
                 </div>
               ))}
-              {isChatLoading && (
-                <div className="flex justify-start">
-                  <div className="bg-white border border-slate-200 p-4 rounded-2xl animate-pulse shadow-sm">
-                    <Loader2 className="animate-spin text-blue-600" size={20} />
-                  </div>
-                </div>
-              )}
-              <div ref={chatEndRef} />
             </div>
-            <div className="p-8 border-t border-slate-200 flex gap-4 bg-white">
-              <input className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 text-sm text-slate-900 outline-none focus:border-blue-500 focus:bg-white transition-all" placeholder="Спросить ассистента..." value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendMessage()} />
-              <button onClick={handleSendMessage} disabled={!chatInput.trim() || isChatLoading} className="p-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl transition-all disabled:opacity-50 shadow-lg shadow-blue-600/10">
-                <Send size={20} />
-              </button>
+            <div className="p-6 border-t border-slate-100 flex gap-2">
+              <input className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm outline-none focus:border-blue-600" placeholder="Задать вопрос по отчету..." value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  setChatMessages([...chatMessages, {role:'user', text: chatInput}]);
+                  setChatInput('');
+                }
+              }} />
+              <button className="p-3 bg-blue-600 text-white rounded-xl shadow-lg shadow-blue-600/20"><Send size={18} /></button>
             </div>
           </div>
         )}
