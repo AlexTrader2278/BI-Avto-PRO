@@ -1,41 +1,30 @@
-export interface CarData {
+export interface CarInput {
   make: string;
   model: string;
-  year?: number;
+  year: number;
   mileage: number;
-  complaint: string;
-  vin: string;
-  attachedFiles: AttachedFile[];
+  vin?: string;
 }
 
-export interface AttachedFile {
+export interface ProblemForecast {
   name: string;
-  type: string;
-  data: string;
+  probability: number;
+  mileageRange: string;
+  cause: string;
+  solution: string;
+  severity: 'critical' | 'medium' | 'low';
 }
 
 export interface AnalysisResult {
   id: string;
-  detailedIssues: string;
-  upsells: ServiceItem[];
-  predictiveAnalysis: {
-    failureProbability: number;
-    reasoning: string;
-  } | null;
-  sources: GroundingSource[];
+  make: string;
+  model: string;
+  year: number;
+  mileage: number;
+  problems: ProblemForecast[];
+  recommendations: string[];
+  sources: string[];
   mermaidPie: string;
-  mermaidGantt: string;
-}
-
-export interface ServiceItem {
-  name: string;
-  reason: string;
-  critical?: boolean;
-}
-
-export interface GroundingSource {
-  title: string;
-  uri: string;
 }
 
 export interface ChatMessage {
