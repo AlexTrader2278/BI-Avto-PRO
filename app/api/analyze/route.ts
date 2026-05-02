@@ -11,18 +11,49 @@ function stripCitationMarkers(text: string): string {
   return text.replace(/\s*\[\d+(?:,\s*\d+)*\]/g, '').trim();
 }
 
-function extractJson(text: string): string {
-  let s = text.trim();
-  if (s.startsWith('```json')) s = s.slice(7);
-  else if (s.startsWith('```')) s = s.slice(3);
-  if (s.endsWith('```')) s = s.slice(0, -3);
-  s = s.trim();
+function extractJson(raw: string): string {
+  // Strip citation markers first so they don't break JSON
+  let s = stripCitationMarkers(raw);
+
+  // Strip markdown code fences
+  s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+
+  // Find the outermost { } pair
   const first = s.indexOf('{');
   const last = s.lastIndexOf('}');
   if (first !== -1 && last !== -1 && last > first) {
     s = s.slice(first, last + 1);
   }
-  return s;
+
+  // Remove inline citation markers that might be embedded in string values
+  // e.g. "cause": "Wear [1] on the gasket [2]" → "cause": "Wear  on the gasket "
+  s = s.replace(/\s*\[\d+(?:,\s*\d+)*\]/g, '');
+
+  return s.trim();
+}
+
+function safeParseJson(raw: string): Record<string, unknown> | null {
+  // First try: direct parse
+  try { return JSON.parse(extractJson(raw)); } catch { /* fall through */ }
+
+  // Second try: strip all control characters and retry
+  try {
+    const cleaned = extractJson(raw).replace(/[\x00-\x1F\x7F]/g, (ch) =>
+      ch === '\n' || ch === '\r' || ch === '\t' ? ch : ''
+    );
+    return JSON.parse(cleaned);
+  } catch { /* fall through */ }
+
+  // Third try: extract just the "problems" array if root parse fails
+  try {
+    const m = raw.match(/"problems"\s*:\s*(\[[\s\S]*?\])/);
+    if (m) {
+      const problems = JSON.parse(m[1].replace(/\s*\[\d+(?:,\s*\d+)*\]/g, ''));
+      return { problems };
+    }
+  } catch { /* fall through */ }
+
+  return null;
 }
 
 interface RawProblem {
@@ -46,37 +77,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Заполните марку, модель, год и пробег' }, { status: 400 });
   }
 
-  const prompt = `Ты — эксперт по диагностике автомобилей. Используй актуальные данные с форумов Дром.ру, Drive2.ru, Reddit, AvtoForumRF.
+  const prompt = `Ты — эксперт по диагностике автомобилей. ВАЖНО: твой ответ должен содержать ТОЛЬКО JSON, никакого другого текста.
 
-Для автомобиля ${make} ${model} ${year} года с пробегом ${mileage} км:
-- Найди топ-5 наиболее частых проблем и поломок для этой модели
-- Оцени вероятность каждой проблемы именно для данного пробега (на основе статистики форумных обсуждений)
-- Укажи диапазон пробега, при котором проблема чаще всего проявляется
-- Дай практические рекомендации
+Для автомобиля ${make} ${model} ${year} года с пробегом ${mileage} км дай топ-5 наиболее частых проблем на основе данных с форумов Дром.ру, Drive2.ru, Reddit.
 
-Верни ТОЛЬКО валидный JSON, без markdown, без пояснений, без ссылочных маркеров вида [1] [2]:
-{
-  "problems": [
-    {
-      "name": "Короткое название проблемы",
-      "probability": 75,
-      "mileageRange": "100 000 — 150 000 км",
-      "cause": "Конкретная причина",
-      "solution": "Что делать",
-      "severity": "critical"
-    }
-  ],
-  "recommendations": [
-    "Рекомендация 1",
-    "Рекомендация 2"
-  ],
-  "mermaidPie": "pie title Вероятности проблем\n    \\"Проблема 1\\" : 75\n    \\"Проблема 2\\" : 60"
-}
+ФОРМАТ ОТВЕТА — строго этот JSON и ничего больше (никаких пояснений до или после, никаких [1][2] маркеров):
+{"problems":[{"name":"Название","probability":75,"mileageRange":"100000-150000 км","cause":"Причина","solution":"Решение","severity":"critical"},{"name":"Название2","probability":60,"mileageRange":"80000-120000 км","cause":"Причина2","solution":"Решение2","severity":"medium"}],"recommendations":["Рекомендация 1","Рекомендация 2"],"mermaidPie":"pie title Вероятности\n    \\"Проблема 1\\" : 75"}
 
-severity: "critical" = срочно нужен ремонт, "medium" = стоит проверить, "low" = плановое обслуживание.
-probability: число от 0 до 100.
-Не вставляй [1], [2] и подобные маркеры цитат внутрь полей JSON.
-Верни ТОЛЬКО JSON.`;
+severity: "critical"=срочный ремонт, "medium"=стоит проверить, "low"=плановое.
+probability: целое число 0-100.
+Верни ТОЛЬКО JSON без какого-либо текста вокруг него.`;
 
   try {
     const response = await fetch(OPENROUTER_URL, {
@@ -123,13 +133,11 @@ probability: число от 0 до 100.
       return NextResponse.json({ error: 'AI вернул пустой ответ' }, { status: 502 });
     }
 
-    let parsed: { problems?: RawProblem[]; recommendations?: string[]; mermaidPie?: string };
-    try {
-      parsed = JSON.parse(extractJson(content));
-    } catch (parseErr) {
-      console.error('JSON parse error:', parseErr, '\nRaw:', content.slice(0, 500));
+    const parsed = safeParseJson(content) as { problems?: RawProblem[]; recommendations?: string[]; mermaidPie?: string } | null;
+    if (!parsed) {
+      console.error('JSON parse failed. Raw:', content.slice(0, 600));
       return NextResponse.json(
-        { error: 'AI вернул некорректный JSON. Попробуйте ещё раз.' },
+        { error: 'AI вернул некорректный ответ. Попробуйте ещё раз — иногда это случается с нестандартными моделями.' },
         { status: 502 }
       );
     }
