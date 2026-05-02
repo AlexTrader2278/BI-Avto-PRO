@@ -1,20 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const runtime = 'nodejs';
+export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
+
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MODEL = 'perplexity/sonar';
 
-function cleanJson(text: string): string {
+function stripCitationMarkers(text: string): string {
+  return text.replace(/\s*\[\d+(?:,\s*\d+)*\]/g, '').trim();
+}
+
+function extractJson(text: string): string {
   let s = text.trim();
   if (s.startsWith('```json')) s = s.slice(7);
-  if (s.startsWith('```')) s = s.slice(3);
+  else if (s.startsWith('```')) s = s.slice(3);
   if (s.endsWith('```')) s = s.slice(0, -3);
-  return s.trim();
+  s = s.trim();
+  const first = s.indexOf('{');
+  const last = s.lastIndexOf('}');
+  if (first !== -1 && last !== -1 && last > first) {
+    s = s.slice(first, last + 1);
+  }
+  return s;
+}
+
+interface RawProblem {
+  name?: string;
+  probability?: number | string;
+  mileageRange?: string;
+  cause?: string;
+  solution?: string;
+  severity?: string;
 }
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    return NextResponse.json({ error: 'OPENROUTER_API_KEY not configured' }, { status: 500 });
+    return NextResponse.json({ error: 'OPENROUTER_API_KEY не настроен на сервере' }, { status: 500 });
   }
 
   const { make, model, year, mileage } = await req.json();
@@ -31,7 +54,7 @@ export async function POST(req: NextRequest) {
 - Укажи диапазон пробега, при котором проблема чаще всего проявляется
 - Дай практические рекомендации
 
-Верни ТОЛЬКО валидный JSON без markdown-обёртки:
+Верни ТОЛЬКО валидный JSON, без markdown, без пояснений, без ссылочных маркеров вида [1] [2]:
 {
   "problems": [
     {
@@ -52,6 +75,7 @@ export async function POST(req: NextRequest) {
 
 severity: "critical" = срочно нужен ремонт, "medium" = стоит проверить, "low" = плановое обслуживание.
 probability: число от 0 до 100.
+Не вставляй [1], [2] и подобные маркеры цитат внутрь полей JSON.
 Верни ТОЛЬКО JSON.`;
 
   try {
@@ -66,19 +90,50 @@ probability: число от 0 до 100.
       body: JSON.stringify({
         model: MODEL,
         messages: [{ role: 'user', content: prompt }],
+        temperature: 0.2,
       }),
     });
 
     if (!response.ok) {
-      const err = await response.text();
-      return NextResponse.json({ error: `OpenRouter error: ${err}` }, { status: 500 });
+      const errText = await response.text();
+      console.error('OpenRouter HTTP error:', response.status, errText);
+      return NextResponse.json(
+        { error: `OpenRouter ${response.status}: ${errText.slice(0, 300)}` },
+        { status: 502 }
+      );
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content ?? '';
-    const citations: string[] = data.citations ?? [];
+    const content: string = data.choices?.[0]?.message?.content ?? '';
+    const citations: string[] = Array.isArray(data.citations) ? data.citations : [];
 
-    const parsed = JSON.parse(cleanJson(content));
+    if (!content) {
+      return NextResponse.json({ error: 'AI вернул пустой ответ' }, { status: 502 });
+    }
+
+    let parsed: { problems?: RawProblem[]; recommendations?: string[]; mermaidPie?: string };
+    try {
+      parsed = JSON.parse(extractJson(content));
+    } catch (parseErr) {
+      console.error('JSON parse error:', parseErr, '\nRaw:', content.slice(0, 500));
+      return NextResponse.json(
+        { error: 'AI вернул некорректный JSON. Попробуйте ещё раз.' },
+        { status: 502 }
+      );
+    }
+
+    const cleanProblems = (parsed.problems ?? []).map((p) => ({
+      name: stripCitationMarkers(String(p.name ?? '')),
+      probability: Math.max(0, Math.min(100, Number(p.probability) || 0)),
+      mileageRange: stripCitationMarkers(String(p.mileageRange ?? '')),
+      cause: stripCitationMarkers(String(p.cause ?? '')),
+      solution: stripCitationMarkers(String(p.solution ?? '')),
+      severity: (['critical', 'medium', 'low'] as const).includes(p.severity as 'critical' | 'medium' | 'low')
+        ? (p.severity as 'critical' | 'medium' | 'low')
+        : 'medium',
+    }));
+
+    const cleanRecs = (parsed.recommendations ?? []).map((r) => stripCitationMarkers(String(r)));
 
     return NextResponse.json({
       id: `BI-${Date.now()}`,
@@ -86,8 +141,8 @@ probability: число от 0 до 100.
       model,
       year,
       mileage,
-      problems: parsed.problems ?? [],
-      recommendations: parsed.recommendations ?? [],
+      problems: cleanProblems,
+      recommendations: cleanRecs,
       sources: citations,
       mermaidPie: parsed.mermaidPie ?? '',
     });

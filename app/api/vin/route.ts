@@ -1,20 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const runtime = 'nodejs';
+export const maxDuration = 30;
+export const dynamic = 'force-dynamic';
+
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MODEL = 'perplexity/sonar';
 
-function cleanJson(text: string): string {
+function extractJson(text: string): string {
   let s = text.trim();
   if (s.startsWith('```json')) s = s.slice(7);
-  if (s.startsWith('```')) s = s.slice(3);
+  else if (s.startsWith('```')) s = s.slice(3);
   if (s.endsWith('```')) s = s.slice(0, -3);
-  return s.trim();
+  s = s.trim();
+  const first = s.indexOf('{');
+  const last = s.lastIndexOf('}');
+  if (first !== -1 && last !== -1 && last > first) s = s.slice(first, last + 1);
+  return s;
 }
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    return NextResponse.json({ error: 'OPENROUTER_API_KEY not configured' }, { status: 500 });
+    return NextResponse.json({ error: 'OPENROUTER_API_KEY не настроен на сервере' }, { status: 500 });
   }
 
   const { vin } = await req.json();
@@ -24,10 +32,8 @@ export async function POST(req: NextRequest) {
 
   const prompt = `Декодируй VIN номер: ${vin}
 
-Верни ТОЛЬКО валидный JSON без markdown-обёртки:
-{"make": "Марка", "model": "Модель", "year": 2020}
-
-Верни ТОЛЬКО JSON.`;
+Верни ТОЛЬКО валидный JSON без markdown:
+{"make": "Марка", "model": "Модель", "year": 2020}`;
 
   try {
     const response = await fetch(OPENROUTER_URL, {
@@ -41,18 +47,32 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         model: MODEL,
         messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1,
       }),
     });
 
     if (!response.ok) {
-      return NextResponse.json({ error: 'Ошибка запроса к AI' }, { status: 500 });
+      const errText = await response.text();
+      console.error('OpenRouter HTTP error:', response.status, errText);
+      return NextResponse.json({ error: `OpenRouter ${response.status}` }, { status: 502 });
     }
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content ?? '';
-    const parsed = JSON.parse(cleanJson(content));
 
-    return NextResponse.json(parsed);
+    let parsed: { make?: string; model?: string; year?: number };
+    try {
+      parsed = JSON.parse(extractJson(content));
+    } catch (parseErr) {
+      console.error('VIN JSON parse error:', parseErr, '\nRaw:', content.slice(0, 300));
+      return NextResponse.json({ error: 'Не удалось декодировать VIN' }, { status: 502 });
+    }
+
+    return NextResponse.json({
+      make: parsed.make ?? '',
+      model: parsed.model ?? '',
+      year: Number(parsed.year) || new Date().getFullYear(),
+    });
   } catch (err) {
     console.error('vin error:', err);
     return NextResponse.json(
