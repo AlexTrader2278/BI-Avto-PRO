@@ -97,6 +97,18 @@ probability: число от 0 до 100.
     if (!response.ok) {
       const errText = await response.text();
       console.error('OpenRouter HTTP error:', response.status, errText);
+      if (response.status === 401) {
+        return NextResponse.json(
+          { error: 'API-ключ OpenRouter недействителен. Получи новый ключ на https://openrouter.ai/keys и обнови переменную OPENROUTER_API_KEY в Vercel → Settings → Environment Variables, затем сделай Redeploy.' },
+          { status: 502 }
+        );
+      }
+      if (response.status === 402) {
+        return NextResponse.json(
+          { error: 'На балансе OpenRouter закончились средства. Пополни баланс на https://openrouter.ai/credits' },
+          { status: 502 }
+        );
+      }
       return NextResponse.json(
         { error: `OpenRouter ${response.status}: ${errText.slice(0, 300)}` },
         { status: 502 }

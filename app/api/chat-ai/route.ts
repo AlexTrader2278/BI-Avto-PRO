@@ -42,6 +42,18 @@ export async function POST(req: NextRequest) {
     if (!response.ok) {
       const errText = await response.text();
       console.error('OpenRouter HTTP error:', response.status, errText);
+      if (response.status === 401) {
+        return NextResponse.json(
+          { error: 'API-ключ OpenRouter недействителен. Обнови OPENROUTER_API_KEY в Vercel.' },
+          { status: 502 }
+        );
+      }
+      if (response.status === 402) {
+        return NextResponse.json(
+          { error: 'На балансе OpenRouter закончились средства.' },
+          { status: 502 }
+        );
+      }
       return NextResponse.json(
         { error: `OpenRouter ${response.status}: ${errText.slice(0, 300)}` },
         { status: 502 }
