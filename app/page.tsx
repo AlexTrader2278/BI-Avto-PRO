@@ -13,68 +13,112 @@ import { CarInput, AnalysisResult, ChatMessage, ProblemForecast } from '@/lib/ty
 const severityConfig = {
   critical: {
     label: 'Критично',
+    sublabel: 'Срочно требует внимания',
     bar: 'bg-red-500',
-    badge: 'bg-red-100 text-red-700 border-red-200',
-    border: 'border-red-200',
+    barGlow: 'shadow-red-200',
+    badge: 'bg-red-500 text-white',
+    border: 'border-red-300',
+    cardBg: 'bg-gradient-to-br from-red-50 to-white',
+    light: 'bg-red-500',
+    lightGlow: 'shadow-[0_0_20px_rgba(239,68,68,0.6)]',
     icon: ShieldAlert,
-    iconColor: 'text-red-500',
   },
   medium: {
     label: 'Внимание',
+    sublabel: 'Стоит проверить',
     bar: 'bg-amber-400',
-    badge: 'bg-amber-100 text-amber-700 border-amber-200',
-    border: 'border-amber-200',
+    barGlow: 'shadow-amber-200',
+    badge: 'bg-amber-400 text-amber-900',
+    border: 'border-amber-300',
+    cardBg: 'bg-gradient-to-br from-amber-50 to-white',
+    light: 'bg-amber-400',
+    lightGlow: 'shadow-[0_0_20px_rgba(251,191,36,0.6)]',
     icon: AlertCircle,
-    iconColor: 'text-amber-500',
   },
   low: {
     label: 'Плановое',
+    sublabel: 'Профилактика',
     bar: 'bg-emerald-500',
-    badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-    border: 'border-emerald-200',
+    barGlow: 'shadow-emerald-200',
+    badge: 'bg-emerald-500 text-white',
+    border: 'border-emerald-300',
+    cardBg: 'bg-gradient-to-br from-emerald-50 to-white',
+    light: 'bg-emerald-500',
+    lightGlow: 'shadow-[0_0_20px_rgba(16,185,129,0.6)]',
     icon: CheckCircle2,
-    iconColor: 'text-emerald-500',
   },
 };
+
+function TrafficLight({ severity }: { severity: 'critical' | 'medium' | 'low' }) {
+  const isRed = severity === 'critical';
+  const isYellow = severity === 'medium';
+  const isGreen = severity === 'low';
+
+  return (
+    <div className="flex flex-col items-center gap-1.5 bg-slate-900 rounded-xl p-2.5 shadow-inner">
+      <div
+        className={`w-5 h-5 rounded-full transition-all ${
+          isRed ? 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.9)]' : 'bg-slate-700'
+        }`}
+      />
+      <div
+        className={`w-5 h-5 rounded-full transition-all ${
+          isYellow ? 'bg-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.9)]' : 'bg-slate-700'
+        }`}
+      />
+      <div
+        className={`w-5 h-5 rounded-full transition-all ${
+          isGreen ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.9)]' : 'bg-slate-700'
+        }`}
+      />
+    </div>
+  );
+}
 
 function ProblemCard({ problem }: { problem: ProblemForecast }) {
   const cfg = severityConfig[problem.severity] ?? severityConfig.medium;
   const Icon = cfg.icon;
 
   return (
-    <div className={`bg-white rounded-2xl border ${cfg.border} p-5 shadow-sm`}>
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="flex items-center gap-2">
-          <Icon className={`w-5 h-5 ${cfg.iconColor} flex-shrink-0`} />
-          <h3 className="font-semibold text-slate-800 leading-tight">{problem.name}</h3>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <span className={`text-xs font-medium px-2 py-1 rounded-full border ${cfg.badge}`}>
-            {cfg.label}
-          </span>
-          <span className="text-2xl font-black text-slate-700">{problem.probability}%</span>
+    <div className={`${cfg.cardBg} rounded-2xl border-2 ${cfg.border} p-5 shadow-md hover:shadow-lg transition-shadow`}>
+      <div className="flex items-start gap-4 mb-4">
+        <TrafficLight severity={problem.severity} />
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <h3 className="font-bold text-slate-800 leading-tight text-base">{problem.name}</h3>
+            <span className="text-3xl font-black text-slate-800 leading-none">{problem.probability}%</span>
+          </div>
+
+          <div className="flex items-center gap-2 mb-3">
+            <span className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${cfg.badge}`}>
+              <Icon className="w-3 h-3" />
+              {cfg.label}
+            </span>
+            <span className="text-xs text-slate-500">· {cfg.sublabel}</span>
+          </div>
+
+          <div className="w-full bg-slate-200/60 rounded-full h-2.5 overflow-hidden">
+            <div
+              className={`${cfg.bar} h-2.5 rounded-full transition-all duration-1000 shadow-md ${cfg.barGlow}`}
+              style={{ width: `${problem.probability}%` }}
+            />
+          </div>
         </div>
       </div>
 
-      <div className="w-full bg-slate-100 rounded-full h-2 mb-4">
-        <div
-          className={`${cfg.bar} h-2 rounded-full transition-all duration-700`}
-          style={{ width: `${problem.probability}%` }}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-        <div className="bg-slate-50 rounded-xl p-3 sm:col-span-2">
-          <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Пробег проявления</p>
+      <div className="grid grid-cols-1 gap-2.5 text-sm">
+        <div className="bg-white/70 backdrop-blur rounded-xl p-3 border border-slate-100">
+          <p className="text-xs text-slate-400 uppercase tracking-wide mb-1 font-semibold">Пробег проявления</p>
           <p className="text-slate-700 font-medium">{problem.mileageRange}</p>
         </div>
-        <div className="bg-slate-50 rounded-xl p-3 sm:col-span-2">
-          <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Причина</p>
+        <div className="bg-white/70 backdrop-blur rounded-xl p-3 border border-slate-100">
+          <p className="text-xs text-slate-400 uppercase tracking-wide mb-1 font-semibold">Причина</p>
           <p className="text-slate-700">{problem.cause}</p>
         </div>
-        <div className="bg-blue-50 rounded-xl p-3 sm:col-span-2">
-          <p className="text-xs text-blue-400 uppercase tracking-wide mb-1">Решение</p>
-          <p className="text-blue-800 font-medium">{problem.solution}</p>
+        <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
+          <p className="text-xs text-blue-500 uppercase tracking-wide mb-1 font-semibold">Решение</p>
+          <p className="text-blue-900 font-medium">{problem.solution}</p>
         </div>
       </div>
     </div>
@@ -343,6 +387,40 @@ export default function Home() {
                     Пробег {analysis.mileage.toLocaleString('ru-RU')} км · Найдено {analysis.problems.length} характерных проблем
                   </p>
                 </div>
+
+                {/* Severity Summary */}
+                {(() => {
+                  const counts = {
+                    critical: analysis.problems.filter((p) => p.severity === 'critical').length,
+                    medium: analysis.problems.filter((p) => p.severity === 'medium').length,
+                    low: analysis.problems.filter((p) => p.severity === 'low').length,
+                  };
+                  return (
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-gradient-to-br from-red-500 to-red-600 text-white rounded-2xl p-4 shadow-lg shadow-red-200">
+                        <div className="flex items-center justify-between mb-1">
+                          <ShieldAlert className="w-5 h-5 opacity-90" />
+                          <span className="text-3xl font-black">{counts.critical}</span>
+                        </div>
+                        <p className="text-xs uppercase tracking-wide font-bold opacity-90">Критично</p>
+                      </div>
+                      <div className="bg-gradient-to-br from-amber-400 to-amber-500 text-amber-950 rounded-2xl p-4 shadow-lg shadow-amber-200">
+                        <div className="flex items-center justify-between mb-1">
+                          <AlertCircle className="w-5 h-5 opacity-90" />
+                          <span className="text-3xl font-black">{counts.medium}</span>
+                        </div>
+                        <p className="text-xs uppercase tracking-wide font-bold opacity-90">Внимание</p>
+                      </div>
+                      <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white rounded-2xl p-4 shadow-lg shadow-emerald-200">
+                        <div className="flex items-center justify-between mb-1">
+                          <CheckCircle2 className="w-5 h-5 opacity-90" />
+                          <span className="text-3xl font-black">{counts.low}</span>
+                        </div>
+                        <p className="text-xs uppercase tracking-wide font-bold opacity-90">Плановое</p>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Problem Cards */}
                 <div>
