@@ -39,6 +39,8 @@ class LRUCache<T> {
 // Module-level singleton — persists across requests in same function instance
 export const analysisCache = new LRUCache<unknown>();
 
+const CACHE_VERSION = 'v2'; // bump to invalidate all cached results
+
 export function makeAnalysisCacheKey(
   make: string,
   model: string,
@@ -46,7 +48,7 @@ export function makeAnalysisCacheKey(
   mileage: number
 ): string {
   const roundedMileage = Math.floor(mileage / 10_000) * 10_000;
-  return `${make.trim().toLowerCase()}:${model.trim().toLowerCase()}:${year}:${roundedMileage}`;
+  return `${CACHE_VERSION}:${make.trim().toLowerCase()}:${model.trim().toLowerCase()}:${year}:${roundedMileage}`;
 }
 
 // Simple counter for "total analyses" — resets on cold start, that's fine for MVP

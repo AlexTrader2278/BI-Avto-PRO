@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
         'perplexity/sonar',
         [{
           role: 'user',
-          content: `Найди топ-5 самых частых проблем и поломок для ${make} ${model} ${year} года с пробегом ${mileage} км. Используй данные с форумов Дром.ру, Drive2.ru, Reddit. Опиши каждую проблему: название, причина, решение, при каком пробеге проявляется. Отвечай на русском языке.`,
+          content: `Автомобиль ${make} ${model} ${year} года, текущий пробег ${mileage} км. Найди на форумах Дром.ру, Drive2.ru, Reddit актуальные проблемы и поломки которые: 1) уже проявляются при пробеге около ${mileage} км, или 2) характерны для следующих 20000-50000 км (${mileage}–${mileage + 50000} км). НЕ включай проблемы которые типично случаются при пробеге значительно меньше ${mileage} км — они уже пройдены. Отвечай на русском языке.`,
         }],
         { temperature: 0.2 }
       );
@@ -89,8 +89,8 @@ export async function POST(req: NextRequest) {
 
     // ── Шаг 2: GPT-4o-mini структурирует найденное в гарантированный JSON ──
     const structurePrompt = forumText
-      ? `На основе этих данных с форумов о ${make} ${model} ${year} года:\n\n${forumText}\n\nСформируй топ-5 проблем в JSON.`
-      : `На основе своих знаний о типичных проблемах ${make} ${model} ${year} года с пробегом ${mileage} км сформируй топ-5 проблем.`;
+      ? `Данные с форумов о ${make} ${model} ${year} года:\n\n${forumText}`
+      : `Используй свои знания о ${make} ${model} ${year} года.`;
 
     const gptData = await fetchWithKey(
       apiKey,
@@ -102,24 +102,33 @@ export async function POST(req: NextRequest) {
         role: 'user',
         content: `${structurePrompt}
 
+Автомобиль: ${make} ${model} ${year} года. ТЕКУЩИЙ ПРОБЕГ: ${mileage} км.
+
+Сформируй топ-5 проблем строго по этим правилам:
+1. Показывай ТОЛЬКО проблемы актуальные для пробега от ${mileage} км и выше
+2. НЕ включай проблемы которые обычно случаются ДО ${mileage} км — они уже позади
+3. Для каждой проблемы mileageRange должен быть >= ${mileage} км
+4. probability — вероятность именно при данном пробеге ${mileage} км
+
 JSON формат:
 {
   "problems": [
     {
       "name": "Название проблемы",
       "probability": 75,
-      "mileageRange": "100000-150000 км",
+      "mileageRange": "${mileage}–${mileage + 30000} км",
       "cause": "Причина",
       "solution": "Что делать",
       "severity": "critical"
     }
   ],
-  "recommendations": ["Рекомендация 1", "Рекомендация 2", "Рекомендация 3"],
-  "mermaidPie": "pie title Вероятности проблем\\n    \\"Проблема 1\\" : 75\\n    \\"Проблема 2\\" : 60"
+  "recommendations": ["Рекомендация с учётом пробега ${mileage} км"],
+  "mermaidPie": "pie title Вероятности\\n    \\"Проблема 1\\" : 75"
 }
 
-severity: "critical"=срочный ремонт, "medium"=стоит проверить, "low"=плановое.
-probability: целое число 1-95. Ровно 5 проблем.`,
+severity: "critical"=срочный ремонт сейчас, "medium"=проверить в ближайшее время, "low"=плановое.
+probability: вероятность именно при пробеге ${mileage} км, целое число 1-95.
+Ровно 5 проблем. mileageRange у каждой >= ${mileage} км.`,
       }],
       { temperature: 0.2, response_format: { type: 'json_object' } }
     );
