@@ -5,55 +5,11 @@ export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL = 'perplexity/sonar';
+// gpt-4o-mini supports response_format: json_object → guaranteed valid JSON every time
+const MODEL = 'openai/gpt-4o-mini';
 
 function stripCitationMarkers(text: string): string {
   return text.replace(/\s*\[\d+(?:,\s*\d+)*\]/g, '').trim();
-}
-
-function extractJson(raw: string): string {
-  // Strip citation markers first so they don't break JSON
-  let s = stripCitationMarkers(raw);
-
-  // Strip markdown code fences
-  s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-
-  // Find the outermost { } pair
-  const first = s.indexOf('{');
-  const last = s.lastIndexOf('}');
-  if (first !== -1 && last !== -1 && last > first) {
-    s = s.slice(first, last + 1);
-  }
-
-  // Remove inline citation markers that might be embedded in string values
-  // e.g. "cause": "Wear [1] on the gasket [2]" → "cause": "Wear  on the gasket "
-  s = s.replace(/\s*\[\d+(?:,\s*\d+)*\]/g, '');
-
-  return s.trim();
-}
-
-function safeParseJson(raw: string): Record<string, unknown> | null {
-  // First try: direct parse
-  try { return JSON.parse(extractJson(raw)); } catch { /* fall through */ }
-
-  // Second try: strip all control characters and retry
-  try {
-    const cleaned = extractJson(raw).replace(/[\x00-\x1F\x7F]/g, (ch) =>
-      ch === '\n' || ch === '\r' || ch === '\t' ? ch : ''
-    );
-    return JSON.parse(cleaned);
-  } catch { /* fall through */ }
-
-  // Third try: extract just the "problems" array if root parse fails
-  try {
-    const m = raw.match(/"problems"\s*:\s*(\[[\s\S]*?\])/);
-    if (m) {
-      const problems = JSON.parse(m[1].replace(/\s*\[\d+(?:,\s*\d+)*\]/g, ''));
-      return { problems };
-    }
-  } catch { /* fall through */ }
-
-  return null;
 }
 
 interface RawProblem {
@@ -77,16 +33,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Заполните марку, модель, год и пробег' }, { status: 400 });
   }
 
-  const prompt = `Ты — эксперт по диагностике автомобилей. ВАЖНО: твой ответ должен содержать ТОЛЬКО JSON, никакого другого текста.
+  const prompt = `Ты — эксперт по диагностике автомобилей. Твои знания основаны на данных с форумов Дром.ру, Drive2.ru, Reddit и других автомобильных сообществ.
 
-Для автомобиля ${make} ${model} ${year} года с пробегом ${mileage} км дай топ-5 наиболее частых проблем на основе данных с форумов Дром.ру, Drive2.ru, Reddit.
+Для автомобиля ${make} ${model} ${year} года с пробегом ${mileage} км дай топ-5 наиболее частых проблем и поломок.
 
-ФОРМАТ ОТВЕТА — строго этот JSON и ничего больше (никаких пояснений до или после, никаких [1][2] маркеров):
-{"problems":[{"name":"Название","probability":75,"mileageRange":"100000-150000 км","cause":"Причина","solution":"Решение","severity":"critical"},{"name":"Название2","probability":60,"mileageRange":"80000-120000 км","cause":"Причина2","solution":"Решение2","severity":"medium"}],"recommendations":["Рекомендация 1","Рекомендация 2"],"mermaidPie":"pie title Вероятности\n    \\"Проблема 1\\" : 75"}
+Верни JSON строго в этом формате:
+{
+  "problems": [
+    {
+      "name": "Короткое название проблемы",
+      "probability": 75,
+      "mileageRange": "100000-150000 км",
+      "cause": "Конкретная причина",
+      "solution": "Что делать владельцу",
+      "severity": "critical"
+    }
+  ],
+  "recommendations": ["Рекомендация 1", "Рекомендация 2", "Рекомендация 3"],
+  "mermaidPie": "pie title Вероятности проблем\n    \\"Проблема 1\\" : 75\n    \\"Проблема 2\\" : 60"
+}
 
-severity: "critical"=срочный ремонт, "medium"=стоит проверить, "low"=плановое.
-probability: целое число 0-100.
-Верни ТОЛЬКО JSON без какого-либо текста вокруг него.`;
+Правила:
+- severity: только "critical" (срочный ремонт), "medium" (стоит проверить), "low" (плановое)
+- probability: целое число от 1 до 95
+- Если модель редкая или малоизвестная — давай ответ на основе типичных проблем схожих платформ/двигателей
+- Ровно 5 проблем в массиве problems`;
 
   try {
     const response = await fetch(OPENROUTER_URL, {
@@ -100,7 +71,8 @@ probability: целое число 0-100.
       body: JSON.stringify({
         model: MODEL,
         messages: [{ role: 'user', content: prompt }],
-        temperature: 0.2,
+        temperature: 0.3,
+        response_format: { type: 'json_object' },
       }),
     });
 
@@ -109,42 +81,44 @@ probability: целое число 0-100.
       console.error('OpenRouter HTTP error:', response.status, errText);
       if (response.status === 401) {
         return NextResponse.json(
-          { error: 'API-ключ OpenRouter недействителен. Получи новый ключ на https://openrouter.ai/keys и обнови переменную OPENROUTER_API_KEY в Vercel → Settings → Environment Variables, затем сделай Redeploy.' },
+          { error: 'API-ключ OpenRouter недействителен. Обнови OPENROUTER_API_KEY в Vercel → Settings → Environment Variables.' },
           { status: 502 }
         );
       }
       if (response.status === 402) {
         return NextResponse.json(
-          { error: 'На балансе OpenRouter закончились средства. Пополни баланс на https://openrouter.ai/credits' },
+          { error: 'На балансе OpenRouter закончились средства. Пополни баланс на openrouter.ai/credits' },
           { status: 502 }
         );
       }
       return NextResponse.json(
-        { error: `OpenRouter ${response.status}: ${errText.slice(0, 300)}` },
+        { error: `Ошибка сервера AI (${response.status}). Попробуйте ещё раз.` },
         { status: 502 }
       );
     }
 
     const data = await response.json();
     const content: string = data.choices?.[0]?.message?.content ?? '';
-    const citations: string[] = Array.isArray(data.citations) ? data.citations : [];
 
     if (!content) {
-      return NextResponse.json({ error: 'AI вернул пустой ответ' }, { status: 502 });
+      return NextResponse.json({ error: 'AI вернул пустой ответ. Попробуйте ещё раз.' }, { status: 502 });
     }
 
-    const parsed = safeParseJson(content) as { problems?: RawProblem[]; recommendations?: string[]; mermaidPie?: string } | null;
-    if (!parsed) {
-      console.error('JSON parse failed. Raw:', content.slice(0, 600));
+    // With response_format: json_object this should always parse, but keep safety net
+    let parsed: { problems?: RawProblem[]; recommendations?: string[]; mermaidPie?: string };
+    try {
+      parsed = JSON.parse(content);
+    } catch (err) {
+      console.error('JSON parse error (unexpected):', err, '\nRaw:', content.slice(0, 400));
       return NextResponse.json(
-        { error: 'AI вернул некорректный ответ. Попробуйте ещё раз — иногда это случается с нестандартными моделями.' },
+        { error: 'Ошибка обработки ответа AI. Попробуйте ещё раз.' },
         { status: 502 }
       );
     }
 
     const cleanProblems = (parsed.problems ?? []).map((p) => ({
       name: stripCitationMarkers(String(p.name ?? '')),
-      probability: Math.max(0, Math.min(100, Number(p.probability) || 0)),
+      probability: Math.max(1, Math.min(95, Number(p.probability) || 50)),
       mileageRange: stripCitationMarkers(String(p.mileageRange ?? '')),
       cause: stripCitationMarkers(String(p.cause ?? '')),
       solution: stripCitationMarkers(String(p.solution ?? '')),
@@ -163,7 +137,7 @@ probability: целое число 0-100.
       mileage,
       problems: cleanProblems,
       recommendations: cleanRecs,
-      sources: citations,
+      sources: [],
       mermaidPie: parsed.mermaidPie ?? '',
     });
   } catch (err) {
