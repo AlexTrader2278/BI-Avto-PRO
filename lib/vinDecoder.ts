@@ -50,8 +50,16 @@ const WMI_TABLE: Record<string, WmiInfo> = {
   XW8: { country: 'Россия', manufacturer: 'VW Group Rus', expectedMakes: ['Volkswagen', 'Skoda', 'Audi', 'VW'] },
   XW7: { country: 'Россия', manufacturer: 'Toyota Russia', expectedMakes: ['Toyota'] },
   XTH: { country: 'Россия', manufacturer: 'ГАЗ', expectedMakes: ['GAZ', 'ГАЗ'] },
-  Z94: { country: 'Россия', manufacturer: 'Hyundai Russia', expectedMakes: ['Hyundai', 'Solaris'] },
+  XTC: { country: 'Россия', manufacturer: 'КАМАЗ', expectedMakes: ['KAMAZ', 'КАМАЗ'] },
+  XTM: { country: 'Россия', manufacturer: 'Mazda Sollers (Владивосток)', expectedMakes: ['Mazda'] },
+  X7L: { country: 'Россия', manufacturer: 'Renault Russia (Москва)', expectedMakes: ['Renault'] },
+  X7M: { country: 'Россия', manufacturer: 'Hyundai/Kia Russia', expectedMakes: ['Hyundai', 'Kia'] },
+  Z94: { country: 'Россия', manufacturer: 'Hyundai Russia (СПб)', expectedMakes: ['Hyundai', 'Solaris'] },
   Z8T: { country: 'Россия', manufacturer: 'Renault Russia', expectedMakes: ['Renault'] },
+  Z6F: { country: 'Россия', manufacturer: 'Ford Sollers', expectedMakes: ['Ford'] },
+  Z8N: { country: 'Россия', manufacturer: 'Nissan Russia (СПб)', expectedMakes: ['Nissan'] },
+  Z7G: { country: 'Россия', manufacturer: 'Chevrolet Russia (Калининград)', expectedMakes: ['Chevrolet'] },
+  XU1: { country: 'Украина', manufacturer: 'ЗАЗ', expectedMakes: ['ZAZ', 'ЗАЗ', 'Daewoo', 'Chevrolet'] },
 
   // ─── Корея ───
   KL1: { country: 'Южная Корея', manufacturer: 'GM Korea', expectedMakes: ['Chevrolet', 'Daewoo', 'Holden'] },
