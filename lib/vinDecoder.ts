@@ -23,15 +23,21 @@ const YEAR_CODES_1980_2009: Record<string, number> = {
   '1': 2001, '2': 2002, '3': 2003, '4': 2004, '5': 2005, '6': 2006, '7': 2007, '8': 2008, '9': 2009,
 };
 
-// Чтобы понять цикл, смотрим позицию 7:
-// если буква (A-Z) → новая эпоха (2010+), если цифра → старая (1980-2009)
+// Чтобы понять цикл, смотрим самый свежий возможный год не из будущего.
+// Правило про позицию 7 (цифра=старая эпоха, буква=новая) работает только
+// для VIN из США/Канады/Мексики, и подводит для корейских/русских/китайских.
 export function decodeYear(vin: string): number | null {
   if (vin.length !== 17) return null;
   const yearChar = vin[9].toUpperCase();
-  const seventhChar = vin[6];
-  const isNewEra = /[A-Z]/i.test(seventhChar);
-  const table = isNewEra ? YEAR_CODES_2010_2039 : YEAR_CODES_1980_2009;
-  return table[yearChar] ?? null;
+  const newEra = YEAR_CODES_2010_2039[yearChar];
+  const oldEra = YEAR_CODES_1980_2009[yearChar];
+  const currentYear = new Date().getFullYear();
+  // Допускаем модельный год на 1 вперёд (например, 2026 модель продаётся в 2025)
+  const maxYear = currentYear + 1;
+
+  if (newEra && newEra <= maxYear) return newEra;
+  if (oldEra && oldEra <= maxYear) return oldEra;
+  return newEra ?? oldEra ?? null;
 }
 
 // WMI — World Manufacturer Identifier (первые 3 символа)
