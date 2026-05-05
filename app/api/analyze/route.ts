@@ -5,8 +5,6 @@ export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-// gpt-4o-mini supports response_format: json_object → guaranteed valid JSON every time
-const MODEL = 'openai/gpt-4o-mini';
 
 function stripCitationMarkers(text: string): string {
   return text.replace(/\s*\[\d+(?:,\s*\d+)*\]/g, '').trim();
@@ -21,6 +19,24 @@ interface RawProblem {
   severity?: string;
 }
 
+async function fetchWithKey(apiKey: string, model: string, messages: object[], extra?: object) {
+  const res = await fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://bi-avto-pro.vercel.app',
+      'X-Title': 'BI-Avto-PRO',
+    },
+    body: JSON.stringify({ model, messages, ...extra }),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw Object.assign(new Error(errText.slice(0, 300)), { status: res.status });
+  }
+  return res.json();
+}
+
 export async function POST(req: NextRequest) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -33,88 +49,75 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Заполните марку, модель, год и пробег' }, { status: 400 });
   }
 
-  const prompt = `Ты — эксперт по диагностике автомобилей. Твои знания основаны на данных с форумов Дром.ру, Drive2.ru, Reddit и других автомобильных сообществ.
+  try {
+    // ── Шаг 1: Perplexity Sonar ищет реальные данные с форумов + даёт живые ссылки ──
+    let forumText = '';
+    let citations: string[] = [];
 
-Для автомобиля ${make} ${model} ${year} года с пробегом ${mileage} км дай топ-5 наиболее частых проблем и поломок.
+    try {
+      const sonarData = await fetchWithKey(
+        apiKey,
+        'perplexity/sonar',
+        [{
+          role: 'user',
+          content: `Найди топ-5 самых частых проблем и поломок для ${make} ${model} ${year} года с пробегом ${mileage} км. Используй данные с форумов Дром.ру, Drive2.ru, Reddit. Опиши каждую проблему: название, причина, решение, при каком пробеге проявляется. Отвечай на русском языке.`,
+        }],
+        { temperature: 0.2 }
+      );
+      forumText = sonarData.choices?.[0]?.message?.content ?? '';
+      citations = Array.isArray(sonarData.citations) ? sonarData.citations : [];
+    } catch (sonarErr) {
+      console.warn('Perplexity step failed, proceeding without forum text:', sonarErr);
+      // Продолжаем без форумного текста — GPT справится сам
+    }
 
-Верни JSON строго в этом формате:
+    // ── Шаг 2: GPT-4o-mini структурирует найденное в гарантированный JSON ──
+    const structurePrompt = forumText
+      ? `На основе этих данных с форумов о ${make} ${model} ${year} года:\n\n${forumText}\n\nСформируй топ-5 проблем в JSON.`
+      : `На основе своих знаний о типичных проблемах ${make} ${model} ${year} года с пробегом ${mileage} км сформируй топ-5 проблем.`;
+
+    const gptData = await fetchWithKey(
+      apiKey,
+      'openai/gpt-4o-mini',
+      [{
+        role: 'system',
+        content: 'Ты — эксперт по диагностике автомобилей. Возвращай ТОЛЬКО валидный JSON без пояснений.',
+      }, {
+        role: 'user',
+        content: `${structurePrompt}
+
+JSON формат:
 {
   "problems": [
     {
-      "name": "Короткое название проблемы",
+      "name": "Название проблемы",
       "probability": 75,
       "mileageRange": "100000-150000 км",
-      "cause": "Конкретная причина",
-      "solution": "Что делать владельцу",
+      "cause": "Причина",
+      "solution": "Что делать",
       "severity": "critical"
     }
   ],
   "recommendations": ["Рекомендация 1", "Рекомендация 2", "Рекомендация 3"],
-  "mermaidPie": "pie title Вероятности проблем\n    \\"Проблема 1\\" : 75\n    \\"Проблема 2\\" : 60"
+  "mermaidPie": "pie title Вероятности проблем\\n    \\"Проблема 1\\" : 75\\n    \\"Проблема 2\\" : 60"
 }
 
-Правила:
-- severity: только "critical" (срочный ремонт), "medium" (стоит проверить), "low" (плановое)
-- probability: целое число от 1 до 95
-- Если модель редкая или малоизвестная — давай ответ на основе типичных проблем схожих платформ/двигателей
-- Ровно 5 проблем в массиве problems`;
+severity: "critical"=срочный ремонт, "medium"=стоит проверить, "low"=плановое.
+probability: целое число 1-95. Ровно 5 проблем.`,
+      }],
+      { temperature: 0.2, response_format: { type: 'json_object' } }
+    );
 
-  try {
-    const response = await fetch(OPENROUTER_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://bi-avto-pro.vercel.app',
-        'X-Title': 'BI-Avto-PRO',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
-        response_format: { type: 'json_object' },
-      }),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error('OpenRouter HTTP error:', response.status, errText);
-      if (response.status === 401) {
-        return NextResponse.json(
-          { error: 'API-ключ OpenRouter недействителен. Обнови OPENROUTER_API_KEY в Vercel → Settings → Environment Variables.' },
-          { status: 502 }
-        );
-      }
-      if (response.status === 402) {
-        return NextResponse.json(
-          { error: 'На балансе OpenRouter закончились средства. Пополни баланс на openrouter.ai/credits' },
-          { status: 502 }
-        );
-      }
-      return NextResponse.json(
-        { error: `Ошибка сервера AI (${response.status}). Попробуйте ещё раз.` },
-        { status: 502 }
-      );
-    }
-
-    const data = await response.json();
-    const content: string = data.choices?.[0]?.message?.content ?? '';
-
+    const content: string = gptData.choices?.[0]?.message?.content ?? '';
     if (!content) {
       return NextResponse.json({ error: 'AI вернул пустой ответ. Попробуйте ещё раз.' }, { status: 502 });
     }
 
-    // With response_format: json_object this should always parse, but keep safety net
-    let parsed: { problems?: RawProblem[]; recommendations?: string[]; mermaidPie?: string };
-    try {
-      parsed = JSON.parse(content);
-    } catch (err) {
-      console.error('JSON parse error (unexpected):', err, '\nRaw:', content.slice(0, 400));
-      return NextResponse.json(
-        { error: 'Ошибка обработки ответа AI. Попробуйте ещё раз.' },
-        { status: 502 }
-      );
-    }
+    const parsed = JSON.parse(content) as {
+      problems?: RawProblem[];
+      recommendations?: string[];
+      mermaidPie?: string;
+    };
 
     const cleanProblems = (parsed.problems ?? []).map((p) => ({
       name: stripCitationMarkers(String(p.name ?? '')),
@@ -127,8 +130,6 @@ export async function POST(req: NextRequest) {
         : 'medium',
     }));
 
-    const cleanRecs = (parsed.recommendations ?? []).map((r) => stripCitationMarkers(String(r)));
-
     return NextResponse.json({
       id: `BI-${Date.now()}`,
       make,
@@ -136,14 +137,22 @@ export async function POST(req: NextRequest) {
       year,
       mileage,
       problems: cleanProblems,
-      recommendations: cleanRecs,
-      sources: [],
+      recommendations: (parsed.recommendations ?? []).map((r) => stripCitationMarkers(String(r))),
+      sources: citations,
       mermaidPie: parsed.mermaidPie ?? '',
     });
-  } catch (err) {
+
+  } catch (err: unknown) {
     console.error('analyze error:', err);
+    const status = (err as { status?: number }).status;
+    if (status === 401) {
+      return NextResponse.json({ error: 'API-ключ OpenRouter недействителен. Обнови OPENROUTER_API_KEY в Vercel.' }, { status: 502 });
+    }
+    if (status === 402) {
+      return NextResponse.json({ error: 'На балансе OpenRouter закончились средства.' }, { status: 502 });
+    }
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Ошибка анализа' },
+      { error: err instanceof Error ? err.message : 'Ошибка анализа. Попробуйте ещё раз.' },
       { status: 500 }
     );
   }
