@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { analysisCache, makeAnalysisCacheKey, incrementAnalysisCount } from '@/lib/cache';
+import { analyzeRateLimiter, getClientIp, rateLimitResponse } from '@/lib/ratelimit';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -43,10 +45,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'OPENROUTER_API_KEY не настроен на сервере' }, { status: 500 });
   }
 
+  // ── Rate limiting ──
+  const ip = getClientIp(req);
+  const rl = analyzeRateLimiter.check(ip);
+  if (!rl.allowed) {
+    return NextResponse.json(rateLimitResponse(rl.resetAt), { status: 429 });
+  }
+
   const { make, model, year, mileage } = await req.json();
 
   if (!make || !model || !year || mileage === undefined) {
     return NextResponse.json({ error: 'Заполните марку, модель, год и пробег' }, { status: 400 });
+  }
+
+  // ── Cache check ──
+  const cacheKey = makeAnalysisCacheKey(make, model, year, mileage);
+  const cached = analysisCache.get(cacheKey);
+  if (cached) {
+    return NextResponse.json(cached, { headers: { 'X-Cache': 'HIT' } });
   }
 
   try {
@@ -130,7 +146,7 @@ probability: целое число 1-95. Ровно 5 проблем.`,
         : 'medium',
     }));
 
-    return NextResponse.json({
+    const result = {
       id: `BI-${Date.now()}`,
       make,
       model,
@@ -140,7 +156,12 @@ probability: целое число 1-95. Ровно 5 проблем.`,
       recommendations: (parsed.recommendations ?? []).map((r) => stripCitationMarkers(String(r))),
       sources: citations,
       mermaidPie: parsed.mermaidPie ?? '',
-    });
+      analysisCount: incrementAnalysisCount(),
+    };
+
+    analysisCache.set(cacheKey, result);
+
+    return NextResponse.json(result, { headers: { 'X-Cache': 'MISS' } });
 
   } catch (err: unknown) {
     console.error('analyze error:', err);

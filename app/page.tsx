@@ -3,11 +3,46 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Car, Search, Loader2, AlertCircle, CheckCircle2, ShieldAlert,
   TrendingUp, MessageSquare, Send, ExternalLink, Wrench, Info,
-  ChevronRight, Gauge, Zap, BarChart3,
+  ChevronRight, Gauge, Zap, BarChart3, Shield,
 } from 'lucide-react';
 import SkeletonLoader from '@/components/SkeletonLoader';
 import { analyzeCar, lookupVin, chatWithAI } from '@/lib/ai';
 import { CarInput, AnalysisResult, ChatMessage, ProblemForecast } from '@/lib/types';
+
+const LOADER_STEPS = [
+  'Ищу обсуждения на Дром.ру...',
+  'Анализирую Drive2.ru...',
+  'Проверяю Reddit и форумы...',
+  'Строю прогноз проблем...',
+];
+
+function SmartLoader() {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setStep((s) => (s + 1) % LOADER_STEPS.length), 2200);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-10 flex flex-col items-center gap-4 text-center">
+      <div className="relative w-14 h-14">
+        <div className="absolute inset-0 rounded-full border-4 border-blue-100" />
+        <div className="absolute inset-0 rounded-full border-4 border-blue-500 border-t-transparent animate-spin" />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Car className="w-5 h-5 text-blue-500" />
+        </div>
+      </div>
+      <div>
+        <p className="font-semibold text-slate-700 text-sm mb-1">{LOADER_STEPS[step]}</p>
+        <div className="flex gap-1 justify-center">
+          {LOADER_STEPS.map((_, i) => (
+            <div key={i} className={`h-1 w-6 rounded-full transition-all duration-300 ${i === step ? 'bg-blue-500' : 'bg-slate-200'}`} />
+          ))}
+        </div>
+      </div>
+      <p className="text-xs text-slate-400">Обычно занимает 15–30 секунд</p>
+    </div>
+  );
+}
 
 const severityConfig = {
   critical: {
@@ -165,6 +200,7 @@ export default function Home() {
   });
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisCount, setAnalysisCount] = useState<number | null>(null);
   const [isVinLookup, setIsVinLookup] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -192,6 +228,7 @@ export default function Home() {
     try {
       const result = await analyzeCar(carInput);
       setAnalysis(result);
+      if (result.analysisCount) setAnalysisCount(result.analysisCount);
     } catch (err) { setError(err instanceof Error ? err.message : 'Ошибка анализа'); }
     finally { setIsAnalyzing(false); }
   };
@@ -221,11 +258,18 @@ export default function Home() {
             <h1 className="text-xl font-black tracking-tight">
               BI-Avto<span className="text-blue-400">PRO</span>
             </h1>
-            <p className="text-xs text-slate-400">Предиктивная аналитика автомобилей</p>
+            <p className="text-xs text-slate-400">Узнай о слабых местах авто до поломки</p>
           </div>
-          <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-400 bg-slate-800 px-3 py-1.5 rounded-full">
-            <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-            AI + Форумы
+          <div className="flex flex-col items-end gap-1">
+            <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-400 bg-slate-800 px-3 py-1.5 rounded-full">
+              <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+              AI + Форумы
+            </div>
+            {analysisCount && (
+              <p className="text-xs text-slate-500 hidden sm:block">
+                Проанализировано: <span className="text-slate-300 font-semibold">{analysisCount.toLocaleString('ru-RU')}</span> авто
+              </p>
+            )}
           </div>
         </div>
       </header>
@@ -322,9 +366,9 @@ export default function Home() {
                 className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-blue-200 transition-all active:scale-95 text-sm"
               >
                 {isAnalyzing ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" />Анализирую форумы...</>
+                  <><Loader2 className="w-4 h-4 animate-spin" />Анализирую...</>
                 ) : (
-                  <><TrendingUp className="w-4 h-4" />Найти проблемы</>
+                  <><Shield className="w-4 h-4" />Проверить авто бесплатно</>
                 )}
               </button>
 
@@ -336,17 +380,31 @@ export default function Home() {
 
           {/* Results */}
           <section className="lg:col-span-8 space-y-4">
-            {isAnalyzing && <SkeletonLoader />}
+            {isAnalyzing && <SmartLoader />}
 
             {!isAnalyzing && !analysis && (
-              <div className="bg-white rounded-2xl border border-slate-200 p-12 flex flex-col items-center justify-center text-center">
-                <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mb-4">
-                  <Car className="w-8 h-8 text-slate-300" />
+              <div className="bg-white rounded-2xl border border-slate-200 p-10 flex flex-col items-center justify-center text-center gap-5">
+                <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-200">
+                  <Car className="w-8 h-8 text-white" />
                 </div>
-                <h3 className="text-base font-semibold text-slate-600 mb-2">Готов к анализу</h3>
-                <p className="text-slate-400 text-sm max-w-xs">
-                  Введите марку, модель и пробег — AI проанализирует тысячи обсуждений на форумах
-                </p>
+                <div>
+                  <h3 className="text-lg font-black text-slate-800 mb-1">Проверь авто до покупки или ремонта</h3>
+                  <p className="text-slate-400 text-sm max-w-xs">
+                    AI анализирует тысячи обсуждений на Дром, Drive2 и Reddit — и показывает типичные проблемы для твоей модели
+                  </p>
+                </div>
+                <div className="grid grid-cols-3 gap-3 w-full max-w-xs">
+                  {[
+                    { icon: Shield, text: 'Реальные данные с форумов' },
+                    { icon: Zap, text: 'Результат за 15–30 сек' },
+                    { icon: TrendingUp, text: 'Вероятность каждой проблемы' },
+                  ].map(({ icon: Icon, text }) => (
+                    <div key={text} className="flex flex-col items-center gap-1.5 p-2.5 bg-slate-50 rounded-xl">
+                      <Icon className="w-4 h-4 text-blue-500" />
+                      <p className="text-xs text-slate-500 text-center leading-tight">{text}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { chatRateLimiter, getClientIp } from '@/lib/ratelimit';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -15,6 +16,16 @@ export async function POST(req: NextRequest) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: 'OPENROUTER_API_KEY не настроен на сервере' }, { status: 500 });
+  }
+
+  const ip = getClientIp(req);
+  const rl = chatRateLimiter.check(ip);
+  if (!rl.allowed) {
+    const mins = Math.ceil((rl.resetAt - Date.now()) / 60_000);
+    return NextResponse.json(
+      { error: `Превышен лимит сообщений. Попробуйте через ${mins} мин.` },
+      { status: 429 }
+    );
   }
 
   const { messages, carContext } = await req.json();

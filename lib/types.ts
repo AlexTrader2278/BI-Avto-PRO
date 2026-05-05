@@ -25,6 +25,7 @@ export interface AnalysisResult {
   recommendations: string[];
   sources: string[];
   mermaidPie: string;
+  analysisCount?: number;
 }
 
 export interface ChatMessage {
