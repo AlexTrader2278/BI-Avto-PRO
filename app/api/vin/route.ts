@@ -30,20 +30,28 @@ function makesMatch(aiMake: string, expectedMakes: string[]): boolean {
 async function askLlm(
   apiKey: string,
   vin: string,
-  manufacturer: string,
-  expectedMakes: string[],
+  manufacturer: string | null,
+  expectedMakes: string[] | null,
   year: number | null
 ): Promise<{ make: string; model: string } | null> {
-  const yearHint = year ? `Год выпуска (по позиции 10 VIN): ${year}.` : '';
-  const prompt = `VIN: ${vin}
-Производитель из WMI: ${manufacturer}.
-${yearHint}
-Ожидаемая марка (одна из): ${expectedMakes.join(', ')}.
+  const yearHint = year ? `Год выпуска (позиция 10 VIN): ${year}.` : '';
+  const wmiHint = manufacturer
+    ? `Производитель по WMI (${vin.slice(0, 3)}): ${manufacturer}.`
+    : `WMI ${vin.slice(0, 3)} в локальной таблице отсутствует — определи производителя самостоятельно.`;
+  const expectedHint =
+    expectedMakes && expectedMakes.length > 0
+      ? `Ожидаемая марка (одна из): ${expectedMakes.join(', ')}.`
+      : '';
 
-Найди в открытых источниках (форумы, базы дилеров, объявления о продаже с этим VIN или похожими по структуре VDS-кодом) точную модель этого автомобиля. ВДС-код (символы 4-8) определяет конкретную модель и кузов внутри производителя.
+  const prompt = `VIN: ${vin}
+${wmiHint}
+${yearHint}
+${expectedHint}
+
+Найди в открытых источниках (форумы, базы дилеров, объявления о продаже с этим VIN или похожими по структуре VDS-кодом) точную марку и модель этого автомобиля. ВДС-код (символы 4-8) определяет конкретную модель и кузов внутри производителя.
 
 Верни ТОЛЬКО валидный JSON без пояснений:
-{"make": "марка из списка ожидаемых", "model": "конкретная модель"}`;
+{"make": "марка", "model": "конкретная модель"}`;
 
   const res = await fetch(OPENROUTER_URL, {
     method: 'POST',
@@ -107,50 +115,62 @@ export async function POST(req: NextRequest) {
 
   console.log('[vin] WMI:', wmi, 'year:', year);
 
-  if (!wmi) {
+  // ── Шаг 2: LLM (всегда вызываем, даже если WMI неизвестен) ──
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  const fallbackYear = year ?? new Date().getFullYear();
+  const noStoreHeaders = { 'Cache-Control': 'no-store, max-age=0' };
+
+  if (!apiKey) {
     return NextResponse.json(
-      { error: `Производитель по VIN не определён (WMI: ${cleanVin.slice(0, 3)}). Заполните марку и модель вручную.` },
-      { status: 422 }
+      {
+        make: wmi?.expectedMakes[0] ?? '',
+        model: '',
+        year: fallbackYear,
+        country: wmi?.country,
+        manufacturer: wmi?.manufacturer,
+      } satisfies VinResult,
+      { headers: noStoreHeaders }
     );
   }
 
-  // ── Шаг 2: LLM с поиском по форумам уточняет конкретную модель ──
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({
-      make: wmi.expectedMakes[0],
-      model: '',
-      year: year ?? new Date().getFullYear(),
-      country: wmi.country,
-      manufacturer: wmi.manufacturer,
-    } satisfies VinResult);
-  }
+  const llmResult = await askLlm(
+    apiKey,
+    cleanVin,
+    wmi?.manufacturer ?? null,
+    wmi?.expectedMakes ?? null,
+    year
+  );
 
-  const llmResult = await askLlm(apiKey, cleanVin, wmi.manufacturer, wmi.expectedMakes, year);
-
-  // ── Шаг 3: валидация — марка от AI должна совпадать с ожидаемой по WMI ──
-  let finalMake = wmi.expectedMakes[0];
+  // ── Шаг 3: собираем итоговый ответ ──
+  let finalMake = wmi?.expectedMakes[0] ?? '';
   let finalModel = '';
 
-  if (llmResult && makesMatch(llmResult.make, wmi.expectedMakes)) {
+  if (wmi && llmResult && makesMatch(llmResult.make, wmi.expectedMakes)) {
     finalMake = llmResult.make;
     finalModel = llmResult.model;
-    console.log('[vin] LLM result accepted:', llmResult);
-  } else if (llmResult) {
+    console.log('[vin] LLM accepted (matches WMI):', llmResult);
+  } else if (wmi && llmResult) {
     console.warn(
-      `[vin] LLM make "${llmResult.make}" не совпадает с WMI ${wmi.expectedMakes.join('/')} — используем модель но ставим марку из WMI`
+      `[vin] LLM make "${llmResult.make}" не совпадает с WMI ${wmi.expectedMakes.join('/')} — оставляем марку из WMI`
     );
     finalMake = wmi.expectedMakes[0];
     finalModel = llmResult.model;
+  } else if (!wmi && llmResult) {
+    finalMake = llmResult.make;
+    finalModel = llmResult.model;
+    console.log('[vin] WMI unknown — fully trusting LLM:', llmResult);
   } else {
-    console.warn('[vin] LLM не вернул результат — отдаём только марку по WMI');
+    console.warn('[vin] No WMI and no LLM result — returning empty fields');
   }
 
-  return NextResponse.json({
-    make: finalMake,
-    model: finalModel,
-    year: year ?? new Date().getFullYear(),
-    country: wmi.country,
-    manufacturer: wmi.manufacturer,
-  } satisfies VinResult);
+  return NextResponse.json(
+    {
+      make: finalMake,
+      model: finalModel,
+      year: fallbackYear,
+      country: wmi?.country,
+      manufacturer: wmi?.manufacturer,
+    } satisfies VinResult,
+    { headers: noStoreHeaders }
+  );
 }
