@@ -202,6 +202,7 @@ export default function Home() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisCount, setAnalysisCount] = useState<number | null>(null);
   const [isVinLookup, setIsVinLookup] = useState(false);
+  const [vinNotice, setVinNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -214,10 +215,23 @@ export default function Home() {
 
   const handleVinLookup = async () => {
     if (!carInput.vin || carInput.vin.length < 10) { setError('Введите VIN номер (минимум 10 символов)'); return; }
-    setIsVinLookup(true); setError(null);
+    setIsVinLookup(true); setError(null); setVinNotice(null);
     try {
       const vinData = await lookupVin(carInput.vin);
-      setCarInput((prev) => ({ ...prev, make: vinData.make || prev.make, model: vinData.model || prev.model, year: vinData.year || prev.year }));
+      setCarInput((prev) => ({
+        ...prev,
+        make: vinData.make || prev.make,
+        model: vinData.model || prev.model,
+        year: vinData.year || prev.year,
+      }));
+
+      if (!vinData.make && !vinData.model) {
+        setVinNotice('Производитель и модель не определились по этому VIN. Введите марку и модель вручную.');
+      } else if (!vinData.model) {
+        setVinNotice(`Марка определена (${vinData.make}), но модель по этому VIN не подтверждена. Введите модель вручную — это надёжнее, чем рисковать ложным определением.`);
+      } else if (!vinData.make) {
+        setVinNotice('Модель определена, но марка не подтверждена. Проверьте поле "Марка".');
+      }
     } catch (err) { setError(err instanceof Error ? err.message : 'Ошибка VIN декодера'); }
     finally { setIsVinLookup(false); }
   };
@@ -376,9 +390,15 @@ export default function Home() {
                 AI ищет обсуждения на Дром, Drive2, Reddit и анализирует типичные проблемы модели
               </p>
 
-              <div className="text-xs text-slate-500 bg-amber-50/60 border border-amber-200/60 rounded-xl p-2.5 leading-snug">
-                <strong className="text-amber-700">Совет:</strong> VIN-декодер может ошибиться с моделью (особенно у KL1, Hyundai, Kia, Renault). Если марка или модель неверны — просто исправь их в полях выше, всё редактируется.
-              </div>
+              {vinNotice && (
+                <div className="text-xs text-slate-700 bg-amber-50 border border-amber-300 rounded-xl p-3 leading-snug flex items-start gap-2 animate-fade-in">
+                  <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="text-amber-800 block mb-0.5">Внимание</strong>
+                    {vinNotice}
+                  </div>
+                </div>
+              )}
             </div>
           </aside>
 
