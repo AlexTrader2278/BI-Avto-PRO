@@ -23,7 +23,7 @@ function SmartLoader() {
     return () => clearInterval(t);
   }, []);
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-10 flex flex-col items-center gap-4 text-center">
+    <div className="neu-card p-10 flex flex-col items-center gap-4 text-center">
       <div className="relative w-14 h-14">
         <div className="absolute inset-0 rounded-full border-4 border-blue-100" />
         <div className="absolute inset-0 rounded-full border-4 border-blue-500 border-t-transparent animate-spin" />
@@ -98,7 +98,7 @@ function ProblemCard({ problem, index }: { problem: ProblemForecast; index: numb
   const Icon = cfg.icon;
 
   return (
-    <div className={`${cfg.cardBg} rounded-2xl border-2 ${cfg.border} p-4 shadow-sm hover:shadow-md transition-all duration-200`}>
+    <div className={`neu-card-flat ${cfg.cardBg} border-l-4 ${cfg.border} p-4 transition-all duration-200`}>
       <div className="flex items-start gap-3 mb-3">
         <TrafficLight severity={problem.severity} />
         <div className="flex-1 min-w-0">
@@ -247,11 +247,11 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-50">
+    <main className="min-h-screen">
       {/* Header */}
-      <header className="bg-slate-900 text-white px-4 py-4 shadow-xl">
-        <div className="max-w-5xl mx-auto flex items-center gap-3">
-          <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center flex-shrink-0">
+      <header className="px-4 py-5">
+        <div className="max-w-5xl mx-auto neu-capsule-dark px-4 py-3 flex items-center gap-3">
+          <div className="w-10 h-10 bg-blue-500 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-lg shadow-blue-500/30">
             <Car className="w-6 h-6 text-white" />
           </div>
           <div className="flex-1 min-w-0">
@@ -261,7 +261,7 @@ export default function Home() {
             <p className="text-xs text-slate-400">Узнай о слабых местах авто до поломки</p>
           </div>
           <div className="flex flex-col items-end gap-1">
-            <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-400 bg-slate-800 px-3 py-1.5 rounded-full">
+            <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-300 bg-slate-800/50 px-3 py-1.5 rounded-full">
               <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
               AI + Форумы
             </div>
@@ -277,7 +277,7 @@ export default function Home() {
       <div className="max-w-5xl mx-auto px-4 py-6">
         {/* Error */}
         {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2">
+          <div className="mb-4 p-3 neu-card-flat flex items-start gap-2 border-l-4 border-red-400">
             <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
             <p className="text-red-800 text-sm flex-1">{error}</p>
             <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 text-xs underline flex-shrink-0">✕</button>
@@ -287,7 +287,7 @@ export default function Home() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
           {/* Input Form */}
           <aside className="lg:col-span-4">
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4 lg:sticky lg:top-5">
+            <div className="neu-card p-5 space-y-4 lg:sticky lg:top-5">
               <h2 className="font-bold text-slate-800 flex items-center gap-2 text-sm">
                 <Gauge className="w-4 h-4 text-blue-500" />
                 Данные автомобиля
@@ -304,13 +304,13 @@ export default function Home() {
                     value={carInput.vin}
                     onChange={(e) => setCarInput({ ...carInput, vin: e.target.value.toUpperCase() })}
                     onKeyDown={(e) => e.key === 'Enter' && handleVinLookup()}
-                    className="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-sm font-mono bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 px-4 py-2.5 neu-inset text-sm font-mono focus:outline-none"
                     placeholder="1HGBH41JXMN109186"
                   />
                   <button
                     onClick={handleVinLookup}
                     disabled={isVinLookup}
-                    className="px-3 py-2 bg-slate-800 text-white rounded-xl hover:bg-slate-700 disabled:opacity-50"
+                    className="px-4 py-2.5 neu-capsule-dark hover:opacity-90 disabled:opacity-50 rounded-2xl"
                   >
                     {isVinLookup ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                   </button>
@@ -329,7 +329,7 @@ export default function Home() {
                       type="text"
                       value={carInput[key] as string}
                       onChange={(e) => setCarInput({ ...carInput, [key]: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-4 py-2.5 neu-inset text-sm focus:outline-none"
                       placeholder={placeholder}
                     />
                   </div>
@@ -344,7 +344,7 @@ export default function Home() {
                     type="number"
                     value={carInput.year}
                     onChange={(e) => setCarInput({ ...carInput, year: parseInt(e.target.value) || new Date().getFullYear() })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2.5 neu-inset text-sm focus:outline-none"
                     placeholder="2018" min={1990} max={new Date().getFullYear()}
                   />
                 </div>
@@ -354,7 +354,7 @@ export default function Home() {
                     type="number"
                     value={carInput.mileage || ''}
                     onChange={(e) => setCarInput({ ...carInput, mileage: parseInt(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2.5 neu-inset text-sm focus:outline-none"
                     placeholder="120000"
                   />
                 </div>
@@ -363,7 +363,7 @@ export default function Home() {
               <button
                 onClick={handleAnalyze}
                 disabled={isAnalyzing}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-blue-200 transition-all active:scale-95 text-sm"
+                className="w-full py-3.5 neu-button-primary disabled:opacity-50 font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] text-sm"
               >
                 {isAnalyzing ? (
                   <><Loader2 className="w-4 h-4 animate-spin" />Анализирую...</>
@@ -383,13 +383,13 @@ export default function Home() {
             {isAnalyzing && <SmartLoader />}
 
             {!isAnalyzing && !analysis && (
-              <div className="bg-white rounded-2xl border border-slate-200 p-10 flex flex-col items-center justify-center text-center gap-5">
-                <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-200">
-                  <Car className="w-8 h-8 text-white" />
+              <div className="neu-card p-10 flex flex-col items-center justify-center text-center gap-5">
+                <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-700 rounded-3xl flex items-center justify-center shadow-xl shadow-blue-300/50">
+                  <Car className="w-10 h-10 text-white" />
                 </div>
                 <div>
                   <h3 className="text-lg font-black text-slate-800 mb-1">Проверь авто до покупки или ремонта</h3>
-                  <p className="text-slate-400 text-sm max-w-xs">
+                  <p className="text-slate-500 text-sm max-w-xs">
                     AI анализирует тысячи обсуждений на Дром, Drive2 и Reddit — и показывает типичные проблемы для твоей модели
                   </p>
                 </div>
@@ -399,7 +399,7 @@ export default function Home() {
                     { icon: Zap, text: 'Результат за 15–30 сек' },
                     { icon: TrendingUp, text: 'Вероятность каждой проблемы' },
                   ].map(({ icon: Icon, text }) => (
-                    <div key={text} className="flex flex-col items-center gap-1.5 p-2.5 bg-slate-50 rounded-xl">
+                    <div key={text} className="flex flex-col items-center gap-1.5 p-3 neu-card-flat">
                       <Icon className="w-4 h-4 text-blue-500" />
                       <p className="text-xs text-slate-500 text-center leading-tight">{text}</p>
                     </div>
@@ -411,10 +411,10 @@ export default function Home() {
             {analysis && (
               <>
                 {/* Header */}
-                <div className="bg-slate-900 text-white rounded-2xl p-5">
+                <div className="neu-capsule-dark p-5">
                   <div className="flex items-center gap-3 mb-1">
-                    <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <Car className="w-4 h-4" />
+                    <div className="w-10 h-10 bg-blue-500 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-lg shadow-blue-500/40">
+                      <Car className="w-5 h-5" />
                     </div>
                     <div className="min-w-0">
                       <h2 className="text-lg font-black truncate">
@@ -464,7 +464,7 @@ export default function Home() {
 
                 {/* Recommendations */}
                 {analysis.recommendations.length > 0 && (
-                  <div className="bg-white rounded-2xl border border-slate-200 p-4">
+                  <div className="neu-card-flat p-4">
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-2">
                       <Wrench className="w-3.5 h-3.5" />
                       Рекомендации
@@ -482,7 +482,7 @@ export default function Home() {
 
                 {/* Sources */}
                 {analysis.sources.length > 0 && (
-                  <div className="bg-white rounded-2xl border border-slate-200 p-4">
+                  <div className="neu-card-flat p-4">
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-2">
                       <ExternalLink className="w-3.5 h-3.5" />
                       Источники ({analysis.sources.length})
@@ -502,7 +502,7 @@ export default function Home() {
                 )}
 
                 {/* Chat */}
-                <div className="bg-white rounded-2xl border border-slate-200 p-4">
+                <div className="neu-card-flat p-4">
                   <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-2">
                     <MessageSquare className="w-3.5 h-3.5" />
                     Спросить AI про {analysis.make} {analysis.model}
@@ -531,13 +531,13 @@ export default function Home() {
                       onChange={(e) => setChatInput(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && !isChatting && handleSendMessage()}
                       placeholder="Ваш вопрос..."
-                      className="flex-1 px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="flex-1 px-4 py-2.5 neu-inset text-sm focus:outline-none"
                       disabled={isChatting}
                     />
                     <button
                       onClick={handleSendMessage}
                       disabled={isChatting || !chatInput.trim()}
-                      className="px-3 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50"
+                      className="px-4 py-2.5 neu-button-primary disabled:opacity-50"
                     >
                       {isChatting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                     </button>
@@ -551,9 +551,9 @@ export default function Home() {
 
       {/* Disclaimer */}
       <footer className="max-w-5xl mx-auto px-4 pb-6">
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
+        <div className="neu-card-flat p-3 flex items-start gap-2 border-l-4 border-amber-300">
           <Info className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-amber-700 leading-relaxed">
+          <p className="text-xs text-slate-600 leading-relaxed">
             <strong>Дисклеймер:</strong> Все данные и прогнозы носят информационный характер и сформированы автоматически
             на основе анализа открытых источников с использованием AI. Перед ремонтом рекомендуем диагностику на СТО.
             BI-Avto-PRO не несёт ответственности за решения, принятые на основе данных сервиса.
