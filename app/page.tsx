@@ -375,6 +375,10 @@ export default function Home() {
               <p className="text-xs text-slate-400 text-center leading-relaxed">
                 AI ищет обсуждения на Дром, Drive2, Reddit и анализирует типичные проблемы модели
               </p>
+
+              <div className="text-xs text-slate-500 bg-amber-50/60 border border-amber-200/60 rounded-xl p-2.5 leading-snug">
+                <strong className="text-amber-700">Совет:</strong> VIN-декодер может ошибиться с моделью (особенно у KL1, Hyundai, Kia, Renault). Если марка или модель неверны — просто исправь их в полях выше, всё редактируется.
+              </div>
             </div>
           </aside>
 
