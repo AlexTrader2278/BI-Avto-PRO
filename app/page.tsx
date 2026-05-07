@@ -295,7 +295,7 @@ export default function Home() {
 
               {/* VIN */}
               <div>
-                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
                   VIN (опционально)
                 </label>
                 <div className="flex gap-2">
@@ -324,7 +324,7 @@ export default function Home() {
                   { label: 'Модель *', key: 'model' as const, placeholder: 'Camry' },
                 ].map(({ label, key, placeholder }) => (
                   <div key={key}>
-                    <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">{label}</label>
+                    <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">{label}</label>
                     <input
                       type="text"
                       value={carInput[key] as string}
@@ -339,7 +339,7 @@ export default function Home() {
               {/* Year + Mileage */}
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">Год *</label>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Год *</label>
                   <input
                     type="number"
                     value={carInput.year}
@@ -349,7 +349,7 @@ export default function Home() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">Пробег км *</label>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Пробег км *</label>
                   <input
                     type="number"
                     value={carInput.mileage || ''}
@@ -451,7 +451,7 @@ export default function Home() {
 
                 {/* Problem Cards */}
                 <div>
-                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-2">
+                  <h3 className="text-xs font-bold text-slate-600 uppercase tracking-wide mb-3 flex items-center gap-2">
                     <ShieldAlert className="w-3.5 h-3.5" />
                     Прогноз проблем
                   </h3>
@@ -465,7 +465,7 @@ export default function Home() {
                 {/* Recommendations */}
                 {analysis.recommendations.length > 0 && (
                   <div className="neu-card-flat p-4">
-                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-2">
+                    <h3 className="text-xs font-bold text-slate-600 uppercase tracking-wide mb-3 flex items-center gap-2">
                       <Wrench className="w-3.5 h-3.5" />
                       Рекомендации
                     </h3>
@@ -483,7 +483,7 @@ export default function Home() {
                 {/* Sources */}
                 {analysis.sources.length > 0 && (
                   <div className="neu-card-flat p-4">
-                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-2">
+                    <h3 className="text-xs font-bold text-slate-600 uppercase tracking-wide mb-3 flex items-center gap-2">
                       <ExternalLink className="w-3.5 h-3.5" />
                       Источники ({analysis.sources.length})
                     </h3>
@@ -503,7 +503,7 @@ export default function Home() {
 
                 {/* Chat */}
                 <div className="neu-card-flat p-4">
-                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-2">
+                  <h3 className="text-xs font-bold text-slate-600 uppercase tracking-wide mb-3 flex items-center gap-2">
                     <MessageSquare className="w-3.5 h-3.5" />
                     Спросить AI про {analysis.make} {analysis.model}
                   </h3>
