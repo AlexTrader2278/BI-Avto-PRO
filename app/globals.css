@@ -6,7 +6,7 @@
   --foreground: #1e293b;
   --foreground-soft: #64748b;
   --background: #e6e9ef;
-  --bg-shadow-dark: #c4c8d2;
+  --bg-shadow-dark: #a8aebb;
   --bg-shadow-light: #ffffff;
   --accent: #2563eb;
   --accent-soft: #60a5fa;
@@ -30,16 +30,16 @@ body {
     background: var(--background);
     border-radius: 24px;
     box-shadow:
-      8px 8px 20px var(--bg-shadow-dark),
-      -8px -8px 20px var(--bg-shadow-light);
+      12px 12px 28px var(--bg-shadow-dark),
+      -12px -12px 28px var(--bg-shadow-light);
   }
 
   .neu-card-flat {
     background: var(--background);
     border-radius: 20px;
     box-shadow:
-      6px 6px 14px var(--bg-shadow-dark),
-      -6px -6px 14px var(--bg-shadow-light);
+      9px 9px 20px var(--bg-shadow-dark),
+      -9px -9px 20px var(--bg-shadow-light);
   }
 
   /* Утопленные элементы — поля ввода */
@@ -47,8 +47,8 @@ body {
     background: var(--background);
     border-radius: 16px;
     box-shadow:
-      inset 4px 4px 8px var(--bg-shadow-dark),
-      inset -4px -4px 8px var(--bg-shadow-light);
+      inset 5px 5px 10px var(--bg-shadow-dark),
+      inset -5px -5px 10px var(--bg-shadow-light);
     border: none;
   }
 
@@ -63,21 +63,21 @@ body {
     background: var(--background);
     border-radius: 16px;
     box-shadow:
-      4px 4px 10px var(--bg-shadow-dark),
-      -4px -4px 10px var(--bg-shadow-light);
+      6px 6px 14px var(--bg-shadow-dark),
+      -6px -6px 14px var(--bg-shadow-light);
     transition: all 0.15s ease;
   }
 
   .neu-button:hover {
     box-shadow:
-      6px 6px 12px var(--bg-shadow-dark),
-      -6px -6px 12px var(--bg-shadow-light);
+      8px 8px 16px var(--bg-shadow-dark),
+      -8px -8px 16px var(--bg-shadow-light);
   }
 
   .neu-button:active {
     box-shadow:
-      inset 3px 3px 6px var(--bg-shadow-dark),
-      inset -3px -3px 6px var(--bg-shadow-light);
+      inset 4px 4px 8px var(--bg-shadow-dark),
+      inset -4px -4px 8px var(--bg-shadow-light);
   }
 
   /* Главная синяя кнопка */
@@ -86,9 +86,9 @@ body {
     color: white;
     border-radius: 16px;
     box-shadow:
-      6px 6px 14px var(--bg-shadow-dark),
-      -6px -6px 14px var(--bg-shadow-light),
-      inset 1px 1px 2px rgba(255, 255, 255, 0.2);
+      9px 9px 20px var(--bg-shadow-dark),
+      -9px -9px 20px var(--bg-shadow-light),
+      inset 1px 1px 2px rgba(255, 255, 255, 0.25);
     transition: all 0.15s ease;
   }
 
@@ -98,8 +98,8 @@ body {
 
   .neu-button-primary:active:not(:disabled) {
     box-shadow:
-      inset 3px 3px 6px rgba(0, 0, 0, 0.2),
-      inset -3px -3px 6px rgba(255, 255, 255, 0.1);
+      inset 4px 4px 8px rgba(0, 0, 0, 0.25),
+      inset -4px -4px 8px rgba(255, 255, 255, 0.1);
   }
 
   /* Тёмная капсула — для заголовка авто и т.п. */
@@ -108,8 +108,8 @@ body {
     color: white;
     border-radius: 24px;
     box-shadow:
-      8px 8px 20px var(--bg-shadow-dark),
-      -8px -8px 20px var(--bg-shadow-light);
+      12px 12px 28px var(--bg-shadow-dark),
+      -12px -12px 28px var(--bg-shadow-light);
   }
 
   /* Маленькие пилюльки для бейджей */
@@ -117,8 +117,8 @@ body {
     background: var(--background);
     border-radius: 9999px;
     box-shadow:
-      inset 3px 3px 6px var(--bg-shadow-dark),
-      inset -3px -3px 6px var(--bg-shadow-light);
+      inset 4px 4px 8px var(--bg-shadow-dark),
+      inset -4px -4px 8px var(--bg-shadow-light);
   }
 }
 
